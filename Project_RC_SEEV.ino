@@ -111,7 +111,7 @@ VL53L0X sensor;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
-QueueHandle_t distanciaQueue, controloQueue, luminosidadeQueue;
+QueueHandle_t distanciaQueue, controloQueue;
 
 // -------- Structs --------
 typedef struct {
@@ -258,7 +258,6 @@ void setup(){
 	//Criar Queues
     distanciaQueue    =  xQueueCreate(1 , sizeof(int)       );
     controloQueue     =  xQueueCreate(1 , sizeof(Controlo)  );
-    luminosidadeQueue =  xQueueCreate(1 , sizeof(int)       );
 
 
     // Mutex para o Display
