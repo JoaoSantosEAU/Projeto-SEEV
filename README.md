@@ -7,6 +7,12 @@ IPLEIRIA - Instituto Politécnico de Leiria
 ESTG - Escola Superior de Tecnologia e Gestão
 LEAU - Licenciatura em Engenharia Automóvel
 SEEV - Sistemas Elétricos e Eletrónicos de Veículos
+
+TP1: Neste projeto pretende-se simular o controlo remoto de um veículo movido a motores DC apartir de um dispositivo bluetooth,
+     como também simular o comportamento de um sensor de luminosidade e um sensor de proximidade que por sua vês gera um sinal 
+     sonoro se detetar alta proximidade com um corpo. 
+	 Link para o vídeo:
+
 */
 
 
