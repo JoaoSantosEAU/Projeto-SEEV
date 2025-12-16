@@ -264,21 +264,6 @@ void setup(){
     displayMutex = xSemaphoreCreateMutex();
 
 
-	//Pinos de controlo do Modulo L298N (Tração/Direção):
-	pinMode(IN1, OUTPUT);
-	pinMode(IN2, OUTPUT);
-	pinMode(IN3, OUTPUT);
-	pinMode(IN4, OUTPUT);
-
-	//Pinos de controlo do Modulo L293D (buzzer):
-	pinMode(IN1_buzzer, OUTPUT);
-	pinMode(IN2_buzzer, OUTPUT);
-
-	//Pinos dos LEDS:
-	pinMode(LED_rear , OUTPUT);
-	pinMode(LED_front, OUTPUT);
-
-
 	//Inicializar o I2C no ESP32 nos pinos 21 (SDA), 22 (SCL)
 	Wire.begin(21, 22);
 
@@ -296,21 +281,6 @@ void setup(){
     //ADC:
 	analogReadResolution(ADC_RESOLUTION);
 
-
-	//Inicialização das funções PWM:
-	ledcAttach(PWM_trac , freq, resolution);
-	ledcAttach(PWM_steer, freq, resolution);
-	ledcAttach(PWM_buzzer,freq, resolution);
-
-	//Segurança dos dutycycles dos PWM´s
-	// Ensure initial PWM = 0
-	ledcWrite(PWM_trac  , 0);
-	ledcWrite(PWM_steer , 0);
-	ledcWrite(PWM_buzzer, 0);
-
-	//Iniciar buzzer desligado
-	digitalWrite(IN1_buzzer, LOW);
-	digitalWrite(IN2_buzzer, LOW);
 
 	//Display:
 	tft.initR(INITR_BLACKTAB);
@@ -345,6 +315,10 @@ void vTask_PWM_Direcao(void *pvParameters) {
 	int sentido_de_direcao = 0;
 	Controlo msg;
 
+	pinMode(IN3, OUTPUT);
+	pinMode(IN4, OUTPUT);
+	ledcAttach(PWM_steer, freq, resolution);
+	ledcWrite(PWM_steer , 0);
 
     Serial.print("vTask_PWM_Direcao iniciada");
 
@@ -383,6 +357,10 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	int carga = 0;
 	Controlo msg;
 
+	pinMode(IN1, OUTPUT);
+	pinMode(IN2, OUTPUT);
+	ledcAttach(PWM_trac , freq, resolution);
+	ledcWrite(PWM_trac , 0);
 
     Serial.print("vTask_PWM_Tracao iniciada");
 
@@ -460,6 +438,10 @@ void vTask_Sensor_Distancia(void *pvParameters) {
 void vTask_PWM_Buzzer(void *pvParameters) {
     int distancia = 0;
 
+    pinMode(IN1_buzzer, OUTPUT);
+    pinMode(IN2_buzzer, OUTPUT);
+    ledcAttach(PWM_buzzer,freq, resolution);
+    ledcWrite(PWM_buzzer , 0);
 
     Serial.print("vTask_PWM_Buzzer iniciada");
 
@@ -497,7 +479,13 @@ void vTask_PWM_Buzzer(void *pvParameters) {
 void vTask_Luminosidade_ADC(void *pvParameters) {
 	int escuro = 200;
 
+	pinMode(LED_rear , OUTPUT);
+	pinMode(LED_front, OUTPUT);
+	digitalWrite(IN1_buzzer, LOW);
+	digitalWrite(IN2_buzzer, LOW);
+
 	Serial.print("vTask_Luminosidade_ADC iniciada");
+
 
 	while(1){
 	int LDR_value = analogRead(LDR);
@@ -561,12 +549,6 @@ void vTask_Display(void *pvParameters) {
 
 	  if (dist != prevDist){
 
-		//Atrasar a atualização da barra de distancia
-		distUpdateCounter++;
-		if (distUpdateCounter >= 3) {   // update every 3 cycles (≈  ms)
-		  distUpdateCounter = 0;
-		//
-
 		//Converte distância p/ percentagem (0–2 m → 0–100%)
 		int dist_pct = map(dist, 0, 600, 100, 0);
 		dist_pct = constrain(dist_pct, 0, 100);        // = if(dist_pct < 0)   dist_pct = 0;
@@ -584,7 +566,7 @@ void vTask_Display(void *pvParameters) {
       }
 	  prevDist = dist;
 	  }
-   }
+
 }
 
 
@@ -716,5 +698,4 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
-
 
