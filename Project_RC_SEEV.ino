@@ -449,7 +449,7 @@ void vTask_Sensor_Distancia(void *pvParameters) {
 
 	// Debug
 	Serial.println("task distancia = ");
-	Serial.println(distance);
+	Serial.println(distance_filtered);
     //
 
 	  vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -716,4 +716,5 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
+
 
