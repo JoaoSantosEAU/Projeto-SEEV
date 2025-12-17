@@ -132,10 +132,6 @@ typedef struct {
 SemaphoreHandle_t displayMutex;
 
 
-// ---------- Flag do sensor ----------
-volatile bool sensorInitialized = false;
-
-
 
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -706,4 +702,7 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
+
+
+
 
