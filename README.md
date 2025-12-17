@@ -17,6 +17,7 @@ TP1: Neste projeto pretende-se simular o controlo remoto de um veículo movido a
 
 
 
+
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------- Bibliotecas: ------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -275,14 +276,9 @@ void setup(){
 	Wire.begin(21, 22);
 
 
-	// Iniciar o Sensor de Distancia:
-	if (!sensor.init()) {
-	  Serial.println("Failed to detect and initialize VL53L0X!");
-	  while (1) { vTaskDelay(1000 / portTICK_PERIOD_MS); Serial.println("Por favor renicie!"); }
-	  }
-	  sensor.setTimeout(500);      // previne se o sensor bloqueie se falhar
-	  sensor.startContinuous(50);  // Mede a cada 50ms
-	  sensorInitialized = true;    // Inicialização iniciada
+    //Inicializar sensor de distância
+	sensor.setTimeout(500);      // previne se o sensor bloqueie se falhar
+	sensor.startContinuous(50);  // Mede a cada 50ms
 
 
     //ADC:
@@ -407,11 +403,15 @@ void vTask_PWM_Tracao(void *pvParameters) {
 void vTask_Sensor_Distancia(void *pvParameters) {
 	int distance = 0, distance_filtered=0, distance_tmp=0;
 
-	// Segurança caso o sensor não inicialize
-	while (!sensorInitialized) {
-	     vTaskDelay(10 / portTICK_PERIOD_MS);
-		 Serial.println("Por favor renicie o sensor de distância!");
-	}
+
+	// Iniciar o Sensor de Distancia:
+	if (!sensor.init()) {
+	  Serial.println("Failed to detect and initialize VL53L0X!");
+	  while (1) {
+		   vTaskDelay(1000 / portTICK_PERIOD_MS);
+		   Serial.println("Por favor renicie!");
+	       }
+      }
 
 
 	Serial.print("vTask_Sensor_Distancia iniciada");
