@@ -254,11 +254,6 @@ void setup(){
 	Serial.begin(115200);
 
 
-	// Inicializa o Bluetooth Classic para Dabble
-	Dabble.begin("ESP32_DABBLE");
-	Serial.println("Dabble iniciado! Abre a app e conecta via Bluetooth.");
-
-
 	//Criar Queues
     distanciaQueue    =  xQueueCreate(1 , sizeof(int)       );
     controloQueue     =  xQueueCreate(1 , sizeof(Controlo)  );
@@ -272,19 +267,8 @@ void setup(){
 	Wire.begin(21, 22);
 
 
-    //Inicializar sensor de distância
-	sensor.setTimeout(500);      // previne se o sensor bloqueie se falhar
-	sensor.startContinuous(50);  // Mede a cada 50ms
-
-
     //ADC:
 	analogReadResolution(ADC_RESOLUTION);
-
-
-	//Display:
-	tft.initR(INITR_BLACKTAB);
-	tft.setRotation(1);
-	tft.fillScreen(ST77XX_BLACK);
 
 
 	//Tasks
@@ -399,16 +383,15 @@ void vTask_PWM_Tracao(void *pvParameters) {
 void vTask_Sensor_Distancia(void *pvParameters) {
 	int distance = 0, distance_filtered=0, distance_tmp=0;
 
-
 	// Iniciar o Sensor de Distancia:
-	if (!sensor.init()) {
-	  Serial.println("Failed to detect and initialize VL53L0X!");
-	  while (1) {
-		   vTaskDelay(1000 / portTICK_PERIOD_MS);
-		   Serial.println("Por favor renicie!");
-	       }
-      }
+		if (!sensor.init()) {
+		  Serial.println("Failed to detect and initialize VL53L0X!");
+		  for(;;){Serial.println("Restart sensor");}
+		 }
 
+		//Inicializar sensor de distância
+		sensor.setTimeout(500);      // previne se o sensor bloqueie se falhar
+		sensor.startContinuous(50);  // Mede a cada 50ms
 
 	Serial.print("vTask_Sensor_Distancia iniciada");
 
@@ -510,6 +493,12 @@ void vTask_Luminosidade_ADC(void *pvParameters) {
 
 
 void vTask_Display(void *pvParameters) {
+
+	//Inicializar Display:
+	tft.initR(INITR_BLACKTAB);
+	tft.setRotation(1);
+	tft.fillScreen(ST77XX_BLACK);
+
 	int dist = 0;       //distancia
 	int prevDist = -1;  //distancia anterior
 	int duty = 0;       //dutycycle
@@ -644,6 +633,11 @@ void vTask_Display(void *pvParameters) {
 
 
 void vTask_Bluetooth(void *pvParameters) {
+
+	// Inicializa o Bluetooth Classic para Dabble
+	Dabble.begin("ESP32_DABBLE");
+	Serial.println("Dabble iniciado! Abre a app e conecta via Bluetooth.");
+
 	Controlo msg;
 	int Xmove;
 	int Ymove;
@@ -702,7 +696,6 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
-
 
 
 
