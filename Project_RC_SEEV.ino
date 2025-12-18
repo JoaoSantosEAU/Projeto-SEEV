@@ -5,6 +5,9 @@ IPLEIRIA - Instituto Politécnico de Leiria
 ESTG - Escola Superior de Tecnologia e Gestão
 LEAU - Licenciatura em Engenharia Automóvel
 SEEV - Sistemas Elétricos e Eletrónicos de Veículos
+
+Youtube: https://youtu.be/Rq4K3AZypbY
+GitHub: https://github.com/JoaoSantosEAU/Projeto-SEEV/blob/main/Project_RC_SEEV.ino
 */
 
 
@@ -688,6 +691,7 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
+
 
 
 
