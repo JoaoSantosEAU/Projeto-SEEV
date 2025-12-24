@@ -286,10 +286,10 @@ void IRAM_ATTR ISR_Botao_esquerdo() {                      //
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (piscasQueue != NULL) {
-		xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+		xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
 	}
 	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  vPortYield();
+	  portYIELD_FROM_ISR();
 	}													   //
 }														   //
 // ----------------------------------------------------------
@@ -303,10 +303,10 @@ void IRAM_ATTR ISR_Botao_direito() {					   //
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (piscasQueue != NULL) {
-	  xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
 	}
 	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  vPortYield();
+	  portYIELD_FROM_ISR();
 	}													   //
 }														   //
 // ----------------------------------------------------------
@@ -320,10 +320,10 @@ void IRAM_ATTR ISR_quatro_piscas() {				       //
 	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
 	if (piscasQueue != NULL) {
-	  xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
 	}
 	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  vPortYield();
+	  portYIELD_FROM_ISR();
 	}													   //
 }														   //
 // ----------------------------------------------------------
@@ -355,7 +355,6 @@ void vTask_pisca_esquerdo(void *pvParameters) {
             esquerdo_ativo = false;
             Serial.println("Tarefa prestes a levar delete");
             vTaskDelete(NULL);
-            Serial.println("Tarefa deleted");
         }
     }
 }
@@ -378,7 +377,6 @@ void vTask_pisca_direito(void *pvParameters) {
             direito_ativo = false;
             Serial.println("Tarefa prestes a levar delete");
             vTaskDelete(NULL);
-            Serial.println("Tarefa deleted");
         }
     }
 }
@@ -551,7 +549,7 @@ static portBASE_TYPE xHigherPriorityTaskWoken;
   	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
 
   if ( xHigherPriorityTaskWoken == pdTRUE ) {
-    vPortYield();
+	portYIELD_FROM_ISR();
   }
 }
 
@@ -572,7 +570,7 @@ void setup(){
 	// -------- Criar Queues --------
     distanciaQueue    =  xQueueCreate(1 , sizeof(int)         );
     controloQueue     =  xQueueCreate(1 , sizeof(Controlo)    );
-    piscasQueue       =  xQueueCreate(1, sizeof(piscasQueue) );
+    piscasQueue       =  xQueueCreate(10, sizeof(piscasQueue) );
 
 
     // -------- Botoes das interrupções --------
