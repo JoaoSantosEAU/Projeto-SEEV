@@ -122,7 +122,7 @@ static void Semaforo_give( void );
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
-QueueHandle_t distanciaQueue, controloQueue;
+QueueHandle_t distanciaQueue, controloQueue, piscasQueue;
 
 // -------- Structs --------
 typedef struct {
@@ -130,6 +130,30 @@ typedef struct {
     int direcao;
     int carga;
 } Controlo;
+
+// ---------------- Piscas: ----------------
+
+// -------- Semáforos: --------
+SemaphoreHandle_t semaforo_piscas;
+
+// -------- Task handles dos piscas: --------
+TaskHandle_t pisca_esquerdo_TaskHandle  = NULL;
+TaskHandle_t pisca_direito_TaskHandle   = NULL;
+TaskHandle_t quatro_piscas_TaskHandle   = NULL;
+TaskHandle_t piscaManager_Handle        = NULL;
+
+
+typedef enum {
+  PISCA_ESQUERDO,
+  PISCA_DIREITO,
+  PISCA_QUATRO
+} PiscaEvento_t;
+
+
+// -------- Estados: --------
+bool esquerdo_ativo = false;
+bool direito_ativo = false;
+bool quatro_ativo = false;
 
 
 
@@ -239,319 +263,6 @@ void drawHighBeams(bool on){
         tft.drawLine(highBeamX+5,highBeamY+6 , highBeamX+14 , highBeamY+12 ,COLOR_Background);
     }
     }
-
-
-
-
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------- Piscas: -----------------------------------------------------------------------------------------
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-
-
-// -------- Semáforos: --------
-SemaphoreHandle_t semaforo_piscas;
-
-// -------- Task handles dos piscas: --------
-TaskHandle_t pisca_esquerdo_TaskHandle  = NULL;
-TaskHandle_t pisca_direito_TaskHandle   = NULL;
-TaskHandle_t quatro_piscas_TaskHandle   = NULL;
-TaskHandle_t piscaManager_Handle        = NULL;
-
-// -------- Queue: --------
-QueueHandle_t piscasQueue = NULL;
-
-typedef enum {
-  PISCA_ESQUERDO,
-  PISCA_DIREITO,
-  PISCA_QUATRO
-} PiscaEvento_t;
-
-// -------- Estados: --------              //talvez protegelas com mutex
-bool esquerdo_ativo = false;
-bool direito_ativo = false;
-bool quatro_ativo = false;
-
-// -------------------------------- Interrupts: --------------------------------
-
-// --------------------- Esquerdo: --------------------------
-                                                           //
-void IRAM_ATTR ISR_Botao_esquerdo() {                      //
-
-
-	PiscaEvento_t ev = PISCA_ESQUERDO;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-	if (piscasQueue != NULL) {
-		xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
-	}
-	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  portYIELD_FROM_ISR();
-	}													   //
-}														   //
-// ----------------------------------------------------------
-
-
-// --------------------- Direito: ---------------------------
-                                                           //
-void IRAM_ATTR ISR_Botao_direito() {					   //
-
-	PiscaEvento_t ev = PISCA_DIREITO;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-	if (piscasQueue != NULL) {
-	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
-	}
-	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  portYIELD_FROM_ISR();
-	}													   //
-}														   //
-// ----------------------------------------------------------
-
-
-// --------------------- Quatro: ----------------------------
-														   //
-void IRAM_ATTR ISR_quatro_piscas() {				       //
-
-	PiscaEvento_t ev = PISCA_QUATRO;
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-	if (piscasQueue != NULL) {
-	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
-	}
-	if (xHigherPriorityTaskWoken == pdTRUE) {
-	  portYIELD_FROM_ISR();
-	}													   //
-}														   //
-// ----------------------------------------------------------
-
-
-
-
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------- Tasks Piscas: -----------------------------------------------------------------------------------------
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-void vTask_pisca_esquerdo(void *pvParameters) {
-
-    pinMode(LED_piscasesquerda, OUTPUT);
-    digitalWrite(LED_piscasesquerda, LOW);
-
-    for (;;) {
-        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
-            digitalWrite(LED_piscasesquerda, HIGH);
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-            digitalWrite(LED_piscasesquerda, LOW);
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-        } else {
-            digitalWrite(LED_piscasesquerda, LOW);
-            pisca_esquerdo_TaskHandle = NULL;
-            esquerdo_ativo = false;
-            Serial.println("Tarefa prestes a levar delete");
-            vTaskDelete(NULL);
-        }
-    }
-}
-
-
-void vTask_pisca_direito(void *pvParameters) {
-
-    pinMode(LED_piscasdireita, OUTPUT);
-    digitalWrite(LED_piscasdireita, LOW);
-
-    for (;;) {
-        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
-            digitalWrite(LED_piscasdireita, HIGH);
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-            digitalWrite(LED_piscasdireita, LOW);
-            vTaskDelay(250 / portTICK_PERIOD_MS);
-        } else {
-            digitalWrite(LED_piscasdireita, LOW);
-            pisca_direito_TaskHandle = NULL;
-            direito_ativo = false;
-            Serial.println("Tarefa prestes a levar delete");
-            vTaskDelete(NULL);
-        }
-    }
-}
-
-
-void vTask_quatro_piscas(void *pvParameters) {
-
-    pinMode(LED_piscasdireita, OUTPUT);
-    pinMode(LED_piscasesquerda, OUTPUT);
-    digitalWrite(LED_piscasdireita, LOW);
-    digitalWrite(LED_piscasesquerda, LOW);
-
-    for (;;) {
-        digitalWrite(LED_piscasdireita, HIGH);
-        digitalWrite(LED_piscasesquerda, HIGH);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-        digitalWrite(LED_piscasdireita, LOW);
-        digitalWrite(LED_piscasesquerda, LOW);
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-    }
-}
-
-
-
-
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// ----------------------------------------------------------------------- Manager dos piscas: --------------------------------------------------------------------------------------
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-void vTask_PiscasManager(void *pvParameters) {
-	PiscaEvento_t ev;
-    for (;;) {
-        if (xQueueReceive(piscasQueue, &ev, portMAX_DELAY) == pdTRUE) {
-
-            switch (ev) {
-                case PISCA_ESQUERDO:
-
-				    Semaforo_give();
-
-                    // Create left task if not active
-                    if (!esquerdo_ativo) {
-                        // If right exists, remove it first (delete)
-                        if (pisca_direito_TaskHandle != NULL) {
-                            vTaskDelete(pisca_direito_TaskHandle);
-                            pisca_direito_TaskHandle = NULL;
-                            direito_ativo = false;
-                            digitalWrite(LED_piscasdireita, LOW);
-                        }
-                        if (pisca_esquerdo_TaskHandle == NULL) {
-                            if (xTaskCreatePinnedToCore(vTask_pisca_esquerdo, "Pisca_Esquerdo", 2048, NULL, 1, &pisca_esquerdo_TaskHandle, 1) == pdPASS) {
-                            	esquerdo_ativo = true;
-                            } else {
-                                pisca_esquerdo_TaskHandle = NULL;
-                            }
-                        } else {
-                        	esquerdo_ativo = true; // defensive
-                        }
-                    } else {
-                        if (pisca_esquerdo_TaskHandle != NULL) {
-                            vTaskDelete(pisca_esquerdo_TaskHandle);
-                            pisca_esquerdo_TaskHandle = NULL;
-                        }
-                        esquerdo_ativo = false;
-                        digitalWrite(LED_piscasesquerda, LOW);
-                    }
-                    break;
-
-                case PISCA_DIREITO:
-
-                	Semaforo_give();
-
-                    if (!direito_ativo) {
-                        if (pisca_esquerdo_TaskHandle != NULL) {
-                            vTaskDelete(pisca_esquerdo_TaskHandle);
-                            pisca_esquerdo_TaskHandle = NULL;
-                            esquerdo_ativo = false;
-                            digitalWrite(LED_piscasesquerda, LOW);
-                        }
-                        if (pisca_direito_TaskHandle == NULL) {
-                            if (xTaskCreatePinnedToCore(vTask_pisca_direito, "Pisca_Direito", 2048, NULL, 1, &pisca_direito_TaskHandle, 1) == pdPASS) {
-                            	direito_ativo = true;
-                            } else {
-                                pisca_direito_TaskHandle = NULL;
-                            }
-                        } else {
-                        	direito_ativo = true;
-                        }
-                    } else {
-                        if (pisca_direito_TaskHandle != NULL) {
-                            vTaskDelete(pisca_direito_TaskHandle);
-                            pisca_direito_TaskHandle = NULL;
-                        }
-                        direito_ativo = false;
-                        digitalWrite(LED_piscasdireita, LOW);
-                    }
-                    break;
-
-                case PISCA_QUATRO:
-                    if (!quatro_ativo) {
-                        // Delete left/right if present
-                        if (pisca_esquerdo_TaskHandle != NULL) {
-                            vTaskDelete(pisca_esquerdo_TaskHandle);
-                            pisca_esquerdo_TaskHandle = NULL;
-                            esquerdo_ativo = false;
-                            digitalWrite(LED_piscasesquerda, LOW);
-                        }
-                        if (pisca_direito_TaskHandle != NULL) {
-                            vTaskDelete(pisca_direito_TaskHandle);
-                            pisca_direito_TaskHandle = NULL;
-                            direito_ativo = false;
-                            digitalWrite(LED_piscasdireita, LOW);
-                        }
-                        // Create four task
-                        if (quatro_piscas_TaskHandle == NULL) {
-                            if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
-                            	quatro_ativo = true;
-                            } else {
-                                quatro_piscas_TaskHandle = NULL;
-                            }
-                        } else {
-                        	quatro_ativo = true;
-                        }
-                    } else {
-                        // Stop four
-                        if (quatro_piscas_TaskHandle != NULL) {
-                            vTaskDelete(quatro_piscas_TaskHandle);
-                            quatro_piscas_TaskHandle = NULL;
-                        }
-                        quatro_ativo = false;
-                        digitalWrite(LED_piscasdireita, LOW);
-                        digitalWrite(LED_piscasesquerda, LOW);
-                    }
-                    break;
-            }
-        }
-    }
-}
-
-
-
-
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------- Gives: -----------------------------------------------------------------------------------------
-// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
-
-static void Semaforo_give( void ){
-
-static portBASE_TYPE xHigherPriorityTaskWoken;
-
-  xHigherPriorityTaskWoken = pdFALSE;
-
-  //for (int i = 0; i < 10; i++) {
-  	   //xSemaphoreGiveFromISR(semaforo_pisca_esquerdo, (BaseType_t*) &xHigherPriorityTaskWoken);
-
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
-
-  if ( xHigherPriorityTaskWoken == pdTRUE ) {
-	portYIELD_FROM_ISR();
-  }
-}
 
 
 
@@ -1066,6 +777,295 @@ void vTask_Bluetooth(void *pvParameters) {
 	vTaskDelay(20 / portTICK_PERIOD_MS);
 	}
 }
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Piscas: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+// -------------------------------- Interrupts: --------------------------------
+
+// --------------------- Esquerdo: --------------------------
+                                                           //
+void IRAM_ATTR ISR_Botao_esquerdo() {                      //
+
+
+	PiscaEvento_t ev = PISCA_ESQUERDO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+		xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  portYIELD_FROM_ISR();
+	  //vPortYield();         // não usar porque se não dá core 1 panic'ed
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+// --------------------- Direito: ---------------------------
+                                                           //
+void IRAM_ATTR ISR_Botao_direito() {					   //
+
+	PiscaEvento_t ev = PISCA_DIREITO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  portYIELD_FROM_ISR();
+	  //vPortYield();
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+// --------------------- Quatro: ----------------------------
+														   //
+void IRAM_ATTR ISR_quatro_piscas() {				       //
+
+	PiscaEvento_t ev = PISCA_QUATRO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+	  xQueueSendFromISR(piscasQueue, &ev, &xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  portYIELD_FROM_ISR();
+	  //vPortYield();
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Tasks Piscas: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+void vTask_pisca_esquerdo(void *pvParameters) {
+
+    pinMode(LED_piscasesquerda, OUTPUT);
+    digitalWrite(LED_piscasesquerda, LOW);
+
+    for (;;) {
+        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
+            digitalWrite(LED_piscasesquerda, HIGH);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            digitalWrite(LED_piscasesquerda, LOW);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        } else {
+            digitalWrite(LED_piscasesquerda, LOW);
+            pisca_esquerdo_TaskHandle = NULL;
+            esquerdo_ativo = false;
+            Serial.println("Tarefa prestes a levar delete");
+            vTaskDelete(NULL);
+        }
+    }
+}
+
+
+void vTask_pisca_direito(void *pvParameters) {
+
+    pinMode(LED_piscasdireita, OUTPUT);
+    digitalWrite(LED_piscasdireita, LOW);
+
+    for (;;) {
+        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
+            digitalWrite(LED_piscasdireita, HIGH);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            digitalWrite(LED_piscasdireita, LOW);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        } else {
+            digitalWrite(LED_piscasdireita, LOW);
+            pisca_direito_TaskHandle = NULL;
+            direito_ativo = false;
+            Serial.println("Tarefa prestes a levar delete");
+            vTaskDelete(NULL);
+        }
+    }
+}
+
+
+void vTask_quatro_piscas(void *pvParameters) {
+
+    pinMode(LED_piscasdireita, OUTPUT);
+    pinMode(LED_piscasesquerda, OUTPUT);
+    digitalWrite(LED_piscasdireita, LOW);
+    digitalWrite(LED_piscasesquerda, LOW);
+
+    for (;;) {
+        digitalWrite(LED_piscasdireita, HIGH);
+        digitalWrite(LED_piscasesquerda, HIGH);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        digitalWrite(LED_piscasdireita, LOW);
+        digitalWrite(LED_piscasesquerda, LOW);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+    }
+}
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------- Manager dos piscas: --------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+void vTask_PiscasManager(void *pvParameters) {
+
+	// -------- Estados: --------
+	bool esquerdo_ativo = false;
+	bool direito_ativo = false;
+	bool quatro_ativo = false;
+
+	PiscaEvento_t ev;
+    for (;;) {
+        if (xQueueReceive(piscasQueue, &ev, portMAX_DELAY) == pdTRUE) {
+
+            switch (ev) {
+                case PISCA_ESQUERDO:
+
+				    Semaforo_give();
+
+                    if (!esquerdo_ativo) {
+
+                        if (pisca_direito_TaskHandle != NULL) {          // != NULL  =  a correr
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                            direito_ativo = false;
+                            digitalWrite(LED_piscasdireita, LOW);
+                        }
+                        if (pisca_esquerdo_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_pisca_esquerdo, "Pisca_Esquerdo", 2048, NULL, 1, &pisca_esquerdo_TaskHandle, 1) == pdPASS) {
+                            	esquerdo_ativo = true;
+                            } else {
+                                pisca_esquerdo_TaskHandle = NULL;
+                            }
+                        } else {
+                        	esquerdo_ativo = true; // defensive
+                        }
+                    } else {                                 // ele faz o delete de esquerdo_ativo = 1 (if do inicio)
+                        if (pisca_esquerdo_TaskHandle != NULL) {        // != NULL  =  a correr
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                        }
+                        esquerdo_ativo = false;
+                        digitalWrite(LED_piscasesquerda, LOW);
+                    }
+                    break;
+
+                case PISCA_DIREITO:
+
+                	Semaforo_give();
+
+                    if (!direito_ativo) {
+                        if (pisca_esquerdo_TaskHandle != NULL) {
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                            esquerdo_ativo = false;
+                            digitalWrite(LED_piscasesquerda, LOW);
+                        }
+                        if (pisca_direito_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_pisca_direito, "Pisca_Direito", 2048, NULL, 1, &pisca_direito_TaskHandle, 1) == pdPASS) {
+                            	direito_ativo = true;
+                            } else {
+                                pisca_direito_TaskHandle = NULL;
+                            }
+                        } else {
+                        	direito_ativo = true;
+                        }
+                    } else {
+                        if (pisca_direito_TaskHandle != NULL) {
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                        }
+                        direito_ativo = false;
+                        digitalWrite(LED_piscasdireita, LOW);
+                    }
+                    break;
+
+                case PISCA_QUATRO:
+                    if (!quatro_ativo) {
+
+                        if (pisca_esquerdo_TaskHandle != NULL) {
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                            esquerdo_ativo = false;
+                            digitalWrite(LED_piscasesquerda, LOW);
+                        }
+                        if (pisca_direito_TaskHandle != NULL) {
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                            direito_ativo = false;
+                            digitalWrite(LED_piscasdireita, LOW);
+                        }
+                        if (quatro_piscas_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
+                            	quatro_ativo = true;
+                            } else {
+                                quatro_piscas_TaskHandle = NULL;
+                            }
+                        } else {
+                        	quatro_ativo = true;
+                        }
+                    } else {
+                        if (quatro_piscas_TaskHandle != NULL) {
+                            vTaskDelete(quatro_piscas_TaskHandle);
+                            quatro_piscas_TaskHandle = NULL;
+                        }
+                        quatro_ativo = false;
+                        digitalWrite(LED_piscasdireita, LOW);
+                        digitalWrite(LED_piscasesquerda, LOW);
+                    }
+                    break;
+            }
+        }
+    }
+}
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Gives: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+static void Semaforo_give( void ){
+
+static portBASE_TYPE xHigherPriorityTaskWoken;
+
+  xHigherPriorityTaskWoken = pdFALSE;
+
+
+  for (int i = 0; i < 10; i++) {
+  	 xSemaphoreGiveFromISR( semaforo_piscas, &xHigherPriorityTaskWoken );
+  }
+
+
+  if ( xHigherPriorityTaskWoken == pdTRUE ) {
+	portYIELD_FROM_ISR();
+  }
+}
+
+
+
 
 
 void loop(){
