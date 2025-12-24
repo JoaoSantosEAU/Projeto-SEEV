@@ -109,10 +109,10 @@ void vTask_PWM_Direcao(void *pvParameters);
 void vTask_PWM_Tracao(void *pvParameters);
 void vTask_Sensor_Distancia(void *pvParameters);
 void vTask_PWM_Buzzer(void *pvParameters);
-void vTask_Luminosidade_ADC(void *pvParameters);
+void vTask_LDR_ADC(void *pvParameters);
 void vTask_Display(void *pvParameters);
 void vTask_Bluetooth(void *pvParameters);
-//void vTask_Farois(void *pvParameters);
+void vTask_Farois(void *pvParameters);
 void vTask_PiscasManager(void *pvParameters);
 void vTask_pisca_direito(void *pvParameters);
 void vTask_pisca_esquerdo(void *pvParameters);
@@ -122,7 +122,7 @@ static void Semaforo_give( void );
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
-QueueHandle_t distanciaQueue, controloQueue, piscasQueue;
+QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue;
 
 // -------- Structs --------
 typedef struct {
@@ -130,6 +130,11 @@ typedef struct {
     int direcao;
     int carga;
 } Controlo;
+
+typedef struct {
+	int escuro;
+	int LDR_value;
+}luminosidade ;
 
 // ---------------- Piscas: ----------------
 
@@ -282,6 +287,7 @@ void setup(){
     distanciaQueue    =  xQueueCreate(1 , sizeof(int)         );
     controloQueue     =  xQueueCreate(1 , sizeof(Controlo)    );
     piscasQueue       =  xQueueCreate(10, sizeof(piscasQueue) );
+    luminosidadeQueue =  xQueueCreate(1 , sizeof(luminosidade));
 
 
     // -------- Botoes das interrupções --------
@@ -303,9 +309,9 @@ void setup(){
 	xTaskCreatePinnedToCore(vTask_PWM_Tracao,       "Task PWM_Tração",       4096, NULL, 4, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Sensor_Distancia, "Task Sensor_Distancia", 4096, NULL, 3, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_PWM_Buzzer,       "Task PWM_Buzzer",       2048, NULL, 3, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_Luminosidade_ADC, "Task ADC",              2048, NULL, 2, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_LDR_ADC, "Task ADC",              2048, NULL, 2, NULL, 1);
     xTaskCreatePinnedToCore(vTask_PiscasManager,    "Pisca_Manager",         3072, NULL, 2, &piscaManager_Handle, 1),
-	//xTaskCreatePinnedToCore(vTask_Farois,           "Task Farois",           2048, NULL, 1, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_Farois,           "Task Farois",           2048, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Display,          "Task Display",          4096, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Bluetooth,        "Task Bluetooth",        4096, NULL, 1, NULL, 0);     //Bluetooth core 0
 
@@ -516,17 +522,12 @@ void vTask_PWM_Buzzer(void *pvParameters) {
 }
 
 
-void vTask_Luminosidade_ADC(void *pvParameters) {
-	//int escuro = 200;       comentado durante testes
+void vTask_LDR_ADC(void *pvParameters) {
 
 	//ADC:
 	analogReadResolution(ADC_RESOLUTION);
 
-	pinMode(LED_farois, OUTPUT);
-	digitalWrite(LED_farois, LOW);
-
-	Serial.print("vTask_Luminosidade_ADC iniciada");
-
+	luminosidade msg;
 
 	// -------- Auto-calibração: --------       (usar para testes)
 	int amostras = 50;
@@ -536,25 +537,57 @@ void vTask_Luminosidade_ADC(void *pvParameters) {
 	   vTaskDelay(20 / portTICK_PERIOD_MS);
 	}
 	int luz_ambiente = soma / amostras;
-	int escuro = luz_ambiente * 0.6;   // 60% da luz do local atual
-    // ----------------------------------
+	msg.escuro = luz_ambiente * 0.6;   // 60% da luz do local atual
+	// ----------------------------------
+
+
+	Serial.print("vTask_Luminosidade_ADC iniciada");
+
 
 	while(1){
-	int LDR_value = analogRead(LDR);
 
-	if (LDR_value < escuro)	{
-	  digitalWrite (LED_farois, HIGH);
-	  Serial.println("LED is ON - Its dark");      //debug
-	  } else {
-	  digitalWrite (LED_farois, LOW);
-	  Serial.println("LED is OFF - Its bright");   //debug
-	  }
+	int LDR_value = analogRead(LDR);
+	msg.LDR_value = LDR_value;
+
+	xQueueOverwrite(luminosidadeQueue, &msg);
+
 
 	vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
 }
 
-void vTask_Initialization_Display(void *pvParameters) {
+
+void vTask_Farois (void *pvparameters) {
+
+	luminosidade msg;
+
+	pinMode(LED_farois, OUTPUT);
+	digitalWrite(LED_farois, LOW);
+
+
+	Serial.println("vTask_Farois iniciada");
+
+
+	while(1){
+
+	if (xQueueReceive(luminosidadeQueue, &msg, portMAX_DELAY)) {
+
+	  int escuro    = msg.escuro;
+	  int LDR_value = msg.LDR_value;
+
+	  if (LDR_value < escuro)	{
+	    digitalWrite (LED_farois, HIGH);
+	    Serial.println("LED is ON - Its dark");      //debug
+	} else {
+	    digitalWrite (LED_farois, LOW);
+	    Serial.println("LED is OFF - Its bright");   //debug
+	  }
+    }
+    }
+}
+
+
+void vTask_Initialization_Display(void *pvParameters) {        //falta confirmar com o resto
 
 
 	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
@@ -589,7 +622,6 @@ void vTask_Initialization_Display(void *pvParameters) {
 
 	vTaskDelay(NULL);
 }
-
 
 
 void vTask_Display(void *pvParameters) {
