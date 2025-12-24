@@ -927,11 +927,6 @@ void vTask_quatro_piscas(void *pvParameters) {
 
 void vTask_PiscasManager(void *pvParameters) {
 
-	// -------- Estados: --------
-	bool esquerdo_ativo = false;
-	bool direito_ativo = false;
-	bool quatro_ativo = false;
-
 	PiscaEvento_t ev;
     for (;;) {
         if (xQueueReceive(piscasQueue, &ev, portMAX_DELAY) == pdTRUE) {
