@@ -5,9 +5,6 @@ IPLEIRIA - Instituto Politécnico de Leiria
 ESTG - Escola Superior de Tecnologia e Gestão
 LEAU - Licenciatura em Engenharia Automóvel
 SEEV - Sistemas Elétricos e Eletrónicos de Veículos
-
-Youtube: https://youtu.be/Rq4K3AZypbY
-GitHub: https://github.com/JoaoSantosEAU/Projeto-SEEV/blob/main/Project_RC_SEEV.ino
 */
 
 
@@ -34,6 +31,7 @@ GitHub: https://github.com/JoaoSantosEAU/Projeto-SEEV/blob/main/Project_RC_SEEV.
 
 //FreeRTOS e etc:
 #include <stdio.h>
+#include "freertos/portmacro.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -93,8 +91,14 @@ GitHub: https://github.com/JoaoSantosEAU/Projeto-SEEV/blob/main/Project_RC_SEEV.
 #define LDR 35
 #define VREF_PLUS  3.3
 #define VREF_MINUS  0.0
-#define LED_front 13
-#define LED_rear 2
+#define LED_farois 13                //amarelos
+#define LED_piscasdireita 2          //vermelhos
+#define LED_piscasesquerda 19        //vermelhos
+
+// -------- Butôes: --------
+#define Botao_esquerdo 15               // botao preto  VN pin
+#define Botao_direito 34               // botao vermelho
+
 
 // -------- Funções PWM --------
 const int freq = 10000;    // 10 kHz
@@ -108,9 +112,13 @@ void vTask_PWM_Buzzer(void *pvParameters);
 void vTask_Luminosidade_ADC(void *pvParameters);
 void vTask_Display(void *pvParameters);
 void vTask_Bluetooth(void *pvParameters);
+//void vTask_Farois(void *pvParameters);
+void vTask_PiscasManager(void *pvParameters);
+void vTask_pisca_direito(void *pvParameters);
+void vTask_pisca_esquerdo(void *pvParameters);
+static void Semaforo_give( void );
 
 // -------- Periféricos --------
-VL53L0X sensor;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
@@ -122,9 +130,6 @@ typedef struct {
     int direcao;
     int carga;
 } Controlo;
-
-// ---------- Display Mutex ----------
-SemaphoreHandle_t displayMutex;
 
 
 
@@ -239,6 +244,321 @@ void drawHighBeams(bool on){
 
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Piscas: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+// -------- Semáforos: --------
+SemaphoreHandle_t semaforo_piscas;
+
+// -------- Task handles dos piscas: --------
+TaskHandle_t pisca_esquerdo_TaskHandle  = NULL;
+TaskHandle_t pisca_direito_TaskHandle   = NULL;
+TaskHandle_t quatro_piscas_TaskHandle   = NULL;
+TaskHandle_t piscaManager_Handle        = NULL;
+
+// -------- Queue: --------
+QueueHandle_t piscasQueue = NULL;
+
+typedef enum {
+  PISCA_ESQUERDO,
+  PISCA_DIREITO,
+  PISCA_QUATRO
+} PiscaEvento_t;
+
+// -------- Estados: --------              //talvez protegelas com mutex
+bool esquerdo_ativo = false;
+bool direito_ativo = false;
+bool quatro_ativo = false;
+
+// -------------------------------- Interrupts: --------------------------------
+
+// --------------------- Esquerdo: --------------------------
+                                                           //
+void IRAM_ATTR ISR_Botao_esquerdo() {                      //
+
+
+	PiscaEvento_t ev = PISCA_ESQUERDO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+		xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  vPortYield();
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+// --------------------- Direito: ---------------------------
+                                                           //
+void IRAM_ATTR ISR_Botao_direito() {					   //
+
+	PiscaEvento_t ev = PISCA_DIREITO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+	  xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  vPortYield();
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+// --------------------- Quatro: ----------------------------
+														   //
+void IRAM_ATTR ISR_quatro_piscas() {				       //
+
+	PiscaEvento_t ev = PISCA_QUATRO;
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+	if (piscasQueue != NULL) {
+	  xQueueOverwriteFromISR(piscasQueue, &ev, (BaseType_t*)&xHigherPriorityTaskWoken);
+	}
+	if (xHigherPriorityTaskWoken == pdTRUE) {
+	  vPortYield();
+	}													   //
+}														   //
+// ----------------------------------------------------------
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Tasks Piscas: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+void vTask_pisca_esquerdo(void *pvParameters) {
+
+    pinMode(LED_piscasesquerda, OUTPUT);
+    digitalWrite(LED_piscasesquerda, LOW);
+
+    for (;;) {
+        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
+            digitalWrite(LED_piscasesquerda, HIGH);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            digitalWrite(LED_piscasesquerda, LOW);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        } else {
+            digitalWrite(LED_piscasesquerda, LOW);
+            pisca_esquerdo_TaskHandle = NULL;
+            esquerdo_ativo = false;
+            Serial.println("Tarefa prestes a levar delete");
+            vTaskDelete(NULL);
+            Serial.println("Tarefa deleted");
+        }
+    }
+}
+
+
+void vTask_pisca_direito(void *pvParameters) {
+
+    pinMode(LED_piscasdireita, OUTPUT);
+    digitalWrite(LED_piscasdireita, LOW);
+
+    for (;;) {
+        if (xSemaphoreTake(semaforo_piscas, 0) == pdTRUE) {
+            digitalWrite(LED_piscasdireita, HIGH);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+            digitalWrite(LED_piscasdireita, LOW);
+            vTaskDelay(250 / portTICK_PERIOD_MS);
+        } else {
+            digitalWrite(LED_piscasdireita, LOW);
+            pisca_direito_TaskHandle = NULL;
+            direito_ativo = false;
+            Serial.println("Tarefa prestes a levar delete");
+            vTaskDelete(NULL);
+            Serial.println("Tarefa deleted");
+        }
+    }
+}
+
+
+void vTask_quatro_piscas(void *pvParameters) {
+
+    pinMode(LED_piscasdireita, OUTPUT);
+    pinMode(LED_piscasesquerda, OUTPUT);
+    digitalWrite(LED_piscasdireita, LOW);
+    digitalWrite(LED_piscasesquerda, LOW);
+
+    for (;;) {
+        digitalWrite(LED_piscasdireita, HIGH);
+        digitalWrite(LED_piscasesquerda, HIGH);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+        digitalWrite(LED_piscasdireita, LOW);
+        digitalWrite(LED_piscasesquerda, LOW);
+        vTaskDelay(250 / portTICK_PERIOD_MS);
+    }
+}
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------- Manager dos piscas: --------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+void vTask_PiscasManager(void *pvParameters) {
+	PiscaEvento_t ev;
+    for (;;) {
+        if (xQueueReceive(piscasQueue, &ev, portMAX_DELAY) == pdTRUE) {
+
+            switch (ev) {
+                case PISCA_ESQUERDO:
+
+				    Semaforo_give();
+
+                    // Create left task if not active
+                    if (!esquerdo_ativo) {
+                        // If right exists, remove it first (delete)
+                        if (pisca_direito_TaskHandle != NULL) {
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                            direito_ativo = false;
+                            digitalWrite(LED_piscasdireita, LOW);
+                        }
+                        if (pisca_esquerdo_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_pisca_esquerdo, "Pisca_Esquerdo", 2048, NULL, 1, &pisca_esquerdo_TaskHandle, 1) == pdPASS) {
+                            	esquerdo_ativo = true;
+                            } else {
+                                pisca_esquerdo_TaskHandle = NULL;
+                            }
+                        } else {
+                        	esquerdo_ativo = true; // defensive
+                        }
+                    } else {
+                        if (pisca_esquerdo_TaskHandle != NULL) {
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                        }
+                        esquerdo_ativo = false;
+                        digitalWrite(LED_piscasesquerda, LOW);
+                    }
+                    break;
+
+                case PISCA_DIREITO:
+
+                	Semaforo_give();
+
+                    if (!direito_ativo) {
+                        if (pisca_esquerdo_TaskHandle != NULL) {
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                            esquerdo_ativo = false;
+                            digitalWrite(LED_piscasesquerda, LOW);
+                        }
+                        if (pisca_direito_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_pisca_direito, "Pisca_Direito", 2048, NULL, 1, &pisca_direito_TaskHandle, 1) == pdPASS) {
+                            	direito_ativo = true;
+                            } else {
+                                pisca_direito_TaskHandle = NULL;
+                            }
+                        } else {
+                        	direito_ativo = true;
+                        }
+                    } else {
+                        if (pisca_direito_TaskHandle != NULL) {
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                        }
+                        direito_ativo = false;
+                        digitalWrite(LED_piscasdireita, LOW);
+                    }
+                    break;
+
+                case PISCA_QUATRO:
+                    if (!quatro_ativo) {
+                        // Delete left/right if present
+                        if (pisca_esquerdo_TaskHandle != NULL) {
+                            vTaskDelete(pisca_esquerdo_TaskHandle);
+                            pisca_esquerdo_TaskHandle = NULL;
+                            esquerdo_ativo = false;
+                            digitalWrite(LED_piscasesquerda, LOW);
+                        }
+                        if (pisca_direito_TaskHandle != NULL) {
+                            vTaskDelete(pisca_direito_TaskHandle);
+                            pisca_direito_TaskHandle = NULL;
+                            direito_ativo = false;
+                            digitalWrite(LED_piscasdireita, LOW);
+                        }
+                        // Create four task
+                        if (quatro_piscas_TaskHandle == NULL) {
+                            if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
+                            	quatro_ativo = true;
+                            } else {
+                                quatro_piscas_TaskHandle = NULL;
+                            }
+                        } else {
+                        	quatro_ativo = true;
+                        }
+                    } else {
+                        // Stop four
+                        if (quatro_piscas_TaskHandle != NULL) {
+                            vTaskDelete(quatro_piscas_TaskHandle);
+                            quatro_piscas_TaskHandle = NULL;
+                        }
+                        quatro_ativo = false;
+                        digitalWrite(LED_piscasdireita, LOW);
+                        digitalWrite(LED_piscasesquerda, LOW);
+                    }
+                    break;
+            }
+        }
+    }
+}
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------- Gives: -----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+static void Semaforo_give( void ){
+
+static portBASE_TYPE xHigherPriorityTaskWoken;
+
+  xHigherPriorityTaskWoken = pdFALSE;
+
+  //for (int i = 0; i < 10; i++) {
+  	   //xSemaphoreGiveFromISR(semaforo_pisca_esquerdo, (BaseType_t*) &xHigherPriorityTaskWoken);
+
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+  	  xSemaphoreGiveFromISR( semaforo_piscas, (BaseType_t*)&xHigherPriorityTaskWoken );
+
+  if ( xHigherPriorityTaskWoken == pdTRUE ) {
+    vPortYield();
+  }
+}
+
+
+
+
+// ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------- Set up: -----------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -249,29 +569,34 @@ void setup(){
 	Serial.begin(115200);
 
 
-	//Criar Queues
-    distanciaQueue    =  xQueueCreate(1 , sizeof(int)       );
-    controloQueue     =  xQueueCreate(1 , sizeof(Controlo)  );
+	// -------- Criar Queues --------
+    distanciaQueue    =  xQueueCreate(1 , sizeof(int)         );
+    controloQueue     =  xQueueCreate(1 , sizeof(Controlo)    );
+    piscasQueue       =  xQueueCreate(1, sizeof(piscasQueue) );
 
 
-    // Mutex para o Display
-    displayMutex = xSemaphoreCreateMutex();
+    // -------- Botoes das interrupções --------
+    pinMode(0, INPUT_PULLUP);  // Boot button
+    pinMode(Botao_esquerdo, INPUT);     // external pull-up
+    pinMode(Botao_direito,  INPUT);
+
+    // -------- Interrupções --------
+    attachInterrupt(digitalPinToInterrupt(0),               &ISR_quatro_piscas ,  FALLING);
+    attachInterrupt(digitalPinToInterrupt(Botao_esquerdo),  &ISR_Botao_esquerdo,  FALLING);
+    attachInterrupt(digitalPinToInterrupt(Botao_direito) ,  &ISR_Botao_direito ,  FALLING);
+
+    // -------- Semáforos --------
+    semaforo_piscas = xSemaphoreCreateCounting(10, 0);
 
 
-	//Inicializar o I2C no ESP32 nos pinos 21 (SDA), 22 (SCL)
-	Wire.begin(21, 22);
-
-
-    //ADC:
-	analogReadResolution(ADC_RESOLUTION);
-
-
-	//Tasks
+	// ---------- Tasks ----------
 	xTaskCreatePinnedToCore(vTask_PWM_Direcao,      "PWM_Direção",           4096, NULL, 5, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_PWM_Tracao,       "Task PWM_Tração",       4096, NULL, 4, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Sensor_Distancia, "Task Sensor_Distancia", 4096, NULL, 3, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_PWM_Buzzer,       "Task PWM_Buzzer",       2048, NULL, 3, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Luminosidade_ADC, "Task ADC",              2048, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(vTask_PiscasManager,    "Pisca_Manager",         3072, NULL, 2, &piscaManager_Handle, 1),
+	//xTaskCreatePinnedToCore(vTask_Farois,           "Task Farois",           2048, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Display,          "Task Display",          4096, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Bluetooth,        "Task Bluetooth",        4096, NULL, 1, NULL, 0);     //Bluetooth core 0
 
@@ -331,6 +656,7 @@ void vTask_PWM_Direcao(void *pvParameters) {
 
 
 void vTask_PWM_Tracao(void *pvParameters) {
+	int distancia = 200;
 	int sentido_de_tracao = 0;
 	int carga = 0;
 	Controlo msg;
@@ -340,10 +666,27 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	ledcAttach(PWM_trac , freq, resolution);
 	ledcWrite(PWM_trac , 0);
 
+
     Serial.print("vTask_PWM_Tracao iniciada");
 
 
 	while(1){
+
+
+	// --------------------- Travagem de emergência: ----------------------------
+			                                                                   //
+	//if (xQueuePeek(distanciaQueue, &distancia, 10 / portTICK_PERIOD_MS)) {     //
+		                                                                       //
+	  //distancia = constrain(distancia, 0, 600);    // 0 cm a 60 cm
+
+	  //while (distancia < 150){           //100 = 10cm
+		// Travar
+		//digitalWrite(IN1, HIGH);
+		//digitalWrite(IN2, HIGH);                                               //
+	//}                                                                          //
+	//} 	                                                                       //
+	// --------------------------------------------------------------------------
+
 
 	if (xQueuePeek(controloQueue, &msg, 10 / portTICK_PERIOD_MS)) {
 
@@ -370,13 +713,19 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	} else ledcWrite(PWM_trac, 0);
 
 	}
+
 	vTaskDelay(30 / portTICK_PERIOD_MS);
   }
 }
 
 
 void vTask_Sensor_Distancia(void *pvParameters) {
-	int distance = 0, distance_filtered=0, distance_tmp=0;
+	int distance = 0, distance_filtered = 0, distance_tmp = 0;
+
+	VL53L0X sensor;
+
+	//Inicializar o I2C no ESP32 nos pinos 21 (SDA), 22 (SCL)
+	Wire.begin(21, 22);
 
 	// Iniciar o Sensor de Distancia:
 		if (!sensor.init()) {
@@ -408,8 +757,8 @@ void vTask_Sensor_Distancia(void *pvParameters) {
 	}
 
 	// Debug
-	Serial.println("task distancia = ");
-	Serial.println(distance_filtered);
+	//Serial.println("task distancia = ");
+	//Serial.println(distance_filtered);
     //
 
 	  vTaskDelay(50 / portTICK_PERIOD_MS);
@@ -448,8 +797,8 @@ void vTask_PWM_Buzzer(void *pvParameters) {
 	}
 
 	// Debug
-	Serial.println("task buzzer = ");
-	Serial.println(distancia);
+	//Serial.println("task buzzer = ");
+	//Serial.println(distancia);
 	//
 
 
@@ -459,32 +808,79 @@ void vTask_PWM_Buzzer(void *pvParameters) {
 
 
 void vTask_Luminosidade_ADC(void *pvParameters) {
-	int escuro = 200;
+	//int escuro = 200;       comentado durante testes
 
-	pinMode(LED_rear , OUTPUT);
-	pinMode(LED_front, OUTPUT);
-	digitalWrite(IN1_buzzer, LOW);
-	digitalWrite(IN2_buzzer, LOW);
+	//ADC:
+	analogReadResolution(ADC_RESOLUTION);
+
+	pinMode(LED_farois, OUTPUT);
+	digitalWrite(LED_farois, LOW);
 
 	Serial.print("vTask_Luminosidade_ADC iniciada");
 
+
+	// -------- Auto-calibração: --------       (usar para testes)
+	int amostras = 50;
+	int soma = 0;
+	for (int i = 0; i < amostras; i++) {
+	   soma += analogRead(LDR);
+	   vTaskDelay(20 / portTICK_PERIOD_MS);
+	}
+	int luz_ambiente = soma / amostras;
+	int escuro = luz_ambiente * 0.6;   // 60% da luz do local atual
+    // ----------------------------------
 
 	while(1){
 	int LDR_value = analogRead(LDR);
 
 	if (LDR_value < escuro)	{
-	  digitalWrite (LED_front, HIGH);
-	  digitalWrite (LED_rear, HIGH);
+	  digitalWrite (LED_farois, HIGH);
 	  Serial.println("LED is ON - Its dark");      //debug
 	  } else {
-	  digitalWrite (LED_front, LOW);
-	  digitalWrite (LED_rear, LOW);
+	  digitalWrite (LED_farois, LOW);
 	  Serial.println("LED is OFF - Its bright");   //debug
 	  }
 
 	vTaskDelay(500 / portTICK_PERIOD_MS);
 	}
 }
+
+void vTask_Initialization_Display(void *pvParameters) {
+
+
+	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
+	const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
+
+	const int chassisX = 100, chassisY = 25;
+	const int chassisW = 20, chassisH = 70;
+
+	const int highBeamX = 135, highBeamY = 105;
+	const int highBeamR = 8;
+
+
+	//Inicializar Display:
+	tft.initR(INITR_BLACKTAB);
+	tft.setRotation(1);
+	tft.fillScreen(ST77XX_BLACK);
+
+
+	drawOutlineRect(leftX, leftY, leftW, leftH + 1, COLOR_OUTLINE);      //barra dutycycle
+	drawOutlineRect(centerX, centerY, leftW, leftH + 1, COLOR_OUTLINE);  //barra proximidade
+	drawChassis();
+	tft.setTextColor(ST77XX_WHITE);
+	tft.setTextSize(1);
+	tft.setCursor(15, leftY + leftH + 5);
+	tft.println("DC");
+	tft.setCursor(43, leftY + leftH + 5);
+	tft.println("Prox");
+	drawHighBeams(false);
+
+
+	Serial.print("vTask_Display iniciada");
+
+	vTaskDelay(NULL);
+}
+
 
 
 void vTask_Display(void *pvParameters) {
@@ -507,7 +903,6 @@ void vTask_Display(void *pvParameters) {
 
 
 	// desenhar elementos fixos no início
-	if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(200))) {
 	drawOutlineRect(leftX, leftY, leftW, leftH+1, COLOR_OUTLINE);         //barra dutycycle
 	drawOutlineRect(centerX, centerY, leftW, leftH+1, COLOR_OUTLINE);   //barra proximidade
 	drawChassis();
@@ -520,10 +915,8 @@ void vTask_Display(void *pvParameters) {
 	drawHighBeams(false);
 
 
-	xSemaphoreGive(displayMutex);
-	}
-
 	Serial.print("vTask_Display iniciada");
+
 
 	while(1){
 
@@ -542,7 +935,6 @@ void vTask_Display(void *pvParameters) {
 		dist_pct = constrain(dist_pct, 0, 100);        // = if(dist_pct < 0)   dist_pct = 0;
 	                                                   //   if(dist_pct > 100) dist_pct = 100;
 
-        if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(50))) {
           drawPercentBar(centerX, centerY, centerW, centerH, dist_pct, COLOR_CENTER_FILL);
 
           //Inserir valores dentro da barra
@@ -550,8 +942,6 @@ void vTask_Display(void *pvParameters) {
           drawCenteredText(centerX, centerY, centerW, centerH, distText);
 
 
-      xSemaphoreGive(displayMutex);
-      }
 	  prevDist = dist;
 	  }
 
@@ -563,15 +953,14 @@ void vTask_Display(void *pvParameters) {
 	   // ----------------------------------------------------------------
 
 
-	bool high = digitalRead(LED_front);
+    //     -----------  ----------- está mal  ----------- -----------
+	bool high = digitalRead(LED_farois);
     if (high != prevHighBeam){
-	if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(50))) {
 	  drawHighBeams(high);
 
-    xSemaphoreGive(displayMutex);
-    }
 	prevHighBeam = high;
     }
+    //     -----------  ----------- está mal  ----------- -----------
 
 
 	   // ----------------------------------------------------------------
@@ -580,12 +969,10 @@ void vTask_Display(void *pvParameters) {
 
 
 	if (xQueuePeek(controloQueue, &ctrl, 10 / portTICK_PERIOD_MS)) {
-		  duty = map(ctrl.carga, 175, 255, 0, 100);              //carga_atual*100% a dividir pela resolução
-	  if (duty > 100 ) duty = 100;
-	  if (duty < 0   ) duty = 0;
+		  duty = map(ctrl.carga, 175, 255, 0, 100);              // o mesmo que - carga_atual*100% a dividir pela resolução
+		  duty = constrain(duty, 0, 100);
 
 	  if (duty != prevduty){
-	    if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(50))) {
 		  drawPercentBar(leftX, leftY, leftW, leftH, duty, COLOR_LEFT_FILL);
 
 		  //Inserir valores dentro da barra
@@ -593,8 +980,6 @@ void vTask_Display(void *pvParameters) {
 		  drawCenteredText(leftX, leftY, leftW, leftH, dutyText);
 
 
-		xSemaphoreGive(displayMutex);
-	    }
 	    prevduty = duty;
 	    }
 
@@ -607,7 +992,6 @@ void vTask_Display(void *pvParameters) {
 	   if (ctrl.sentido_de_tracao != prevctrl.sentido_de_tracao ||
 	       ctrl.direcao           != prevctrl.direcao){
 
-		   if (xSemaphoreTake(displayMutex, pdMS_TO_TICKS(50))) {
 
 		     eraseArrows();
 
@@ -617,8 +1001,6 @@ void vTask_Display(void *pvParameters) {
 		     else if (ctrl.direcao < 0) drawArrowLeft();
 
 
-		 xSemaphoreGive(displayMutex);
-		 }
 	     prevctrl = ctrl;
 	     }
     }
@@ -661,9 +1043,9 @@ void vTask_Bluetooth(void *pvParameters) {
 	    // -------- Ajustar carga (Duty-cycle) --------
 
 	    if (GamePad.isSelectPressed()) {
-	        carga += 5;
+	        carga += 3;
 	    } else if (GamePad.isStartPressed()) {
-	        carga -= 5;
+	        carga -= 3;
 	    }
 	    carga = constrain(carga, 175, 255);
 
@@ -674,12 +1056,12 @@ void vTask_Bluetooth(void *pvParameters) {
 	    msg.carga              = carga;
 
 	    // Debug
-	    Serial.print("[BT] X=");
-	    Serial.print(msg.direcao);
-	    Serial.print("  Y=");
-	    Serial.println(msg.sentido_de_tracao);
-	    Serial.print(" Carga=");
-	    Serial.print(msg.carga);
+	    //Serial.print("[BT] X=");
+	    //Serial.print(msg.direcao);
+	    //Serial.print("  Y=");
+	    //Serial.println(msg.sentido_de_tracao);
+	    //Serial.print(" Carga=");
+	    //Serial.print(msg.carga);
 
 	xQueueOverwrite(controloQueue, &msg);
 
@@ -691,7 +1073,5 @@ void vTask_Bluetooth(void *pvParameters) {
 void loop(){
 	vTaskDelete(NULL);
 }
-
-
 
 
