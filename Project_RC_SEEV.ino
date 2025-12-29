@@ -309,8 +309,8 @@ void setup(){
 	xTaskCreatePinnedToCore(vTask_PWM_Tracao,       "Task PWM_Tração",       4096, NULL, 4, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Sensor_Distancia, "Task Sensor_Distancia", 4096, NULL, 3, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_PWM_Buzzer,       "Task PWM_Buzzer",       2048, NULL, 3, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_LDR_ADC, "Task ADC",              2048, NULL, 2, NULL, 1);
-    xTaskCreatePinnedToCore(vTask_PiscasManager,    "Pisca_Manager",         3072, NULL, 2, &piscaManager_Handle, 1),
+	xTaskCreatePinnedToCore(vTask_LDR_ADC,          "Task ADC",              2048, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(vTask_PiscasManager,    "Pisca_Manager",         3072, NULL, 1, &piscaManager_Handle, 1),
 	xTaskCreatePinnedToCore(vTask_Farois,           "Task Farois",           2048, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Display,          "Task Display",          4096, NULL, 1, NULL, 1);
 	xTaskCreatePinnedToCore(vTask_Bluetooth,        "Task Bluetooth",        4096, NULL, 1, NULL, 0);     //Bluetooth core 0
@@ -375,6 +375,7 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	int sentido_de_tracao = 0;
 	int carga = 0;
 	Controlo msg;
+	bool quatro_auto_ativo = false;
 
 	pinMode(IN1, OUTPUT);
 	pinMode(IN2, OUTPUT);
@@ -390,18 +391,45 @@ void vTask_PWM_Tracao(void *pvParameters) {
 
 	// --------------------- Travagem de emergência: ----------------------------
 			                                                                   //
-	//if (xQueuePeek(distanciaQueue, &distancia, 10 / portTICK_PERIOD_MS)) {     //
+	if (xQueuePeek(distanciaQueue, &distancia, 10 / portTICK_PERIOD_MS)) {     //
 		                                                                       //
-	  //distancia = constrain(distancia, 0, 600);    // 0 cm a 60 cm
+	  distancia = constrain(distancia, 0, 600);    // 0 cm a 60 cm
+	}
 
-	  //while (distancia < 150){           //100 = 10cm
-		// Travar
-		//digitalWrite(IN1, HIGH);
-		//digitalWrite(IN2, HIGH);                                               //
-	//}                                                                          //
-	//} 	                                                                       //
+	if (distancia < 150) {           //100 = 10cm
+
+	  // Subir prioridade
+	  if (uxTaskPriorityGet(NULL) != 6) {
+	    vTaskPrioritySet(NULL, 6);
+	  }
+
+	  // Travar
+	  digitalWrite(IN1, HIGH);
+	  digitalWrite(IN2, HIGH);
+
+	  //Acender 4 piscas
+	  if (quatro_auto_ativo == false){
+	    PiscaEvento_t ev = PISCA_QUATRO;
+	    xQueueSend(piscasQueue, &ev, 0);
+	    quatro_auto_ativo = true;
+		}                                                                      //
+	}                                                                          // 	                                                                       //
 	// --------------------------------------------------------------------------
 
+
+	else {
+
+	// Voltar à prioridade normal
+	if (uxTaskPriorityGet(NULL) != 4) {
+	  vTaskPrioritySet(NULL, 4);
+	}
+
+    //Desligadar 4 piscas
+	if (quatro_auto_ativo == true){
+	  PiscaEvento_t ev = PISCA_QUATRO;
+	  xQueueSend(piscasQueue, &ev, 0);
+	  quatro_auto_ativo = false;
+	}
 
 	if (xQueuePeek(controloQueue, &msg, 10 / portTICK_PERIOD_MS)) {
 
@@ -428,7 +456,8 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	} else ledcWrite(PWM_trac, 0);
 
 	}
-
+	}
+	//Serial.println(uxTaskPriorityGet(NULL));
 	vTaskDelay(30 / portTICK_PERIOD_MS);
   }
 }
