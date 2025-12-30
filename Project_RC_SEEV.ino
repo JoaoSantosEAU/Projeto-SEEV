@@ -110,6 +110,7 @@ void vTask_PWM_Tracao(void *pvParameters);
 void vTask_Sensor_Distancia(void *pvParameters);
 void vTask_PWM_Buzzer(void *pvParameters);
 void vTask_LDR_ADC(void *pvParameters);
+void vTask_Inicializacao_Display(void *pvParameters);
 void vTask_Display(void *pvParameters);
 void vTask_Bluetooth(void *pvParameters);
 void vTask_Farois(void *pvParameters);
@@ -170,18 +171,7 @@ bool quatro_ativo = false;
 
 
 
-// -------- Variavéis display: --------   tft.drawRect(x, y, width, height, color);
-const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
-const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
-
-const int chassisX = 100, chassisY = 25;
-const int chassisW = 20,  chassisH = 70;
-
-const int highBeamX = 135, highBeamY = 105;
-const int highBeamR = 8;
-
-
-// funções display (chat)
+// funções display                                     tft.drawRect(x, y, width, height, color);
 void drawOutlineRect(int x,int y,int w,int h,uint16_t color){
     tft.drawRect(x,y,w,h,color);
     }
@@ -216,7 +206,7 @@ void drawCenteredText(int x, int y, int w, int h, const char* text) {
 }
 
 
-void drawChassis(){
+void drawChassis(int chassisX, int chassisY, int chassisW, int chassisH){
     tft.drawRect(chassisX, chassisY, chassisW, chassisH, COLOR_CHASSIS);
 
     // rodas
@@ -227,35 +217,35 @@ void drawChassis(){
     }
 
 
-void eraseArrows(){
+void eraseArrows(int chassisX, int chassisY, int chassisW, int chassisH){
     tft.fillRect(chassisX-25,chassisY-25,chassisW+50,chassisH+50,COLOR_Background);
-    drawChassis();
+    drawChassis(chassisX, chassisY, chassisW, chassisH);
     }
 
 
-void drawArrowFront(){                        //tft.fillTriangle(x1, y1, x2, y2, x3, y3, color);
+void drawArrowFront(int chassisX, int chassisY, int chassisW, int chassisH){                        //tft.fillTriangle(x1, y1, x2, y2, x3, y3, color);
     int mx=chassisX+chassisW/2;  //meio do retangulo do chassis na horizontal
     tft.fillTriangle(mx, chassisY-18, mx-6, chassisY-4, mx+6, chassisY-4, COLOR_ARROW);
     }
 
 
-void drawArrowBack(){
+void drawArrowBack(int chassisX, int chassisY, int chassisW, int chassisH){
     int mx=chassisX+chassisW/2;
     tft.fillTriangle(mx, chassisY+chassisH+18, mx-6, chassisY+chassisH+4, mx+6, chassisY+chassisH+4, COLOR_ARROW);
     }
 
 
-void drawArrowLeft(){
+void drawArrowLeft(int chassisX, int chassisY, int chassisW, int chassisH){
     int my=chassisY+chassisH/2;   //meio do retangulo do chassis na vertical
     tft.fillTriangle(chassisX-18,my, chassisX-4,my-6, chassisX-4,my+6, COLOR_ARROW);
     }
-void drawArrowRight(){
+void drawArrowRight(int chassisX, int chassisY, int chassisW, int chassisH){
     int my=chassisY+chassisH/2;
     tft.fillTriangle(chassisX+chassisW+18,my, chassisX+chassisW+4,my-6, chassisX+chassisW+4,my+6, COLOR_ARROW);
     }
 
 
-void drawHighBeams(bool on){
+void drawHighBeams(int highBeamX, int highBeamY, int highBeamR, bool on){
     if(on){
         tft.fillCircle(highBeamX,highBeamY,highBeamR,COLOR_LIGHT);
         tft.drawLine(highBeamX+5,highBeamY-6 , highBeamX+14 , highBeamY-12 ,COLOR_LIGHT);
@@ -305,15 +295,15 @@ void setup(){
 
 
 	// ---------- Tasks ----------
-	xTaskCreatePinnedToCore(vTask_PWM_Direcao,      "PWM_Direção",           4096, NULL, 5, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_PWM_Tracao,       "Task PWM_Tração",       4096, NULL, 4, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_Sensor_Distancia, "Task Sensor_Distancia", 4096, NULL, 3, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_PWM_Buzzer,       "Task PWM_Buzzer",       2048, NULL, 3, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_LDR_ADC,          "Task ADC",              2048, NULL, 2, NULL, 1);
-    xTaskCreatePinnedToCore(vTask_PiscasManager,    "Pisca_Manager",         3072, NULL, 1, &piscaManager_Handle, 1),
-	xTaskCreatePinnedToCore(vTask_Farois,           "Task Farois",           2048, NULL, 1, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_Display,          "Task Display",          4096, NULL, 1, NULL, 1);
-	xTaskCreatePinnedToCore(vTask_Bluetooth,        "Task Bluetooth",        4096, NULL, 1, NULL, 0);     //Bluetooth core 0
+	xTaskCreatePinnedToCore(vTask_PWM_Direcao,            "PWM_Direção",                       4096, NULL, 5, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_PWM_Tracao,             "Task PWM_Tração",                   4096, NULL, 4, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_Sensor_Distancia,       "Task Sensor_Distancia",             4096, NULL, 3, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_PWM_Buzzer,             "Task PWM_Buzzer",                   2048, NULL, 3, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_LDR_ADC,                "Task ADC",                          2048, NULL, 2, NULL, 1);
+    xTaskCreatePinnedToCore(vTask_PiscasManager,          "Pisca_Manager",                     3072, NULL, 1, &piscaManager_Handle, 1),
+	xTaskCreatePinnedToCore(vTask_Farois,                 "Task Farois",                       2048, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(vTask_Inicializacao_Display,  "Task Inicialização do Display",     4096, NULL, 6, NULL, 1);
+	xTaskCreatePinnedToCore(vTask_Bluetooth,              "Task Bluetooth",                    4096, NULL, 1, NULL, 0);     //Bluetooth core 0
 
 
 	Serial.println("Setup completo!");
@@ -338,7 +328,7 @@ void vTask_PWM_Direcao(void *pvParameters) {
 	ledcAttach(PWM_steer, freq, resolution);
 	ledcWrite(PWM_steer , 0);
 
-    Serial.print("vTask_PWM_Direcao iniciada");
+	Serial.println("vTask_PWM_Direcao iniciada");
 
 
 	while(1){
@@ -383,7 +373,7 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	ledcWrite(PWM_trac , 0);
 
 
-    Serial.print("vTask_PWM_Tracao iniciada");
+	Serial.println("vTask_PWM_Tracao iniciada");
 
 
 	while(1){
@@ -411,6 +401,9 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	  if (quatro_auto_ativo == false){
 	    PiscaEvento_t ev = PISCA_QUATRO;
 	    xQueueSend(piscasQueue, &ev, 0);
+
+	    //...
+
 	    quatro_auto_ativo = true;
 		}                                                                      //
 	}                                                                          // 	                                                                       //
@@ -428,6 +421,9 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	if (quatro_auto_ativo == true){
 	  PiscaEvento_t ev = PISCA_QUATRO;
 	  xQueueSend(piscasQueue, &ev, 0);
+
+	  //...
+
 	  quatro_auto_ativo = false;
 	}
 
@@ -481,7 +477,7 @@ void vTask_Sensor_Distancia(void *pvParameters) {
 		sensor.setTimeout(500);      // previne se o sensor bloqueie se falhar
 		sensor.startContinuous(50);  // Mede a cada 50ms
 
-	Serial.print("vTask_Sensor_Distancia iniciada");
+		Serial.println("vTask_Sensor_Distancia iniciada");
 
 
 	while(1){
@@ -518,7 +514,7 @@ void vTask_PWM_Buzzer(void *pvParameters) {
     ledcAttach(PWM_buzzer,freq, resolution);
     ledcWrite(PWM_buzzer , 0);
 
-    Serial.print("vTask_PWM_Buzzer iniciada");
+    Serial.println("vTask_PWM_Buzzer iniciada");
 
 
 	while(1){
@@ -570,7 +566,7 @@ void vTask_LDR_ADC(void *pvParameters) {
 	// ----------------------------------
 
 
-	Serial.print("vTask_Luminosidade_ADC iniciada");
+	Serial.println("vTask_Luminosidade_ADC iniciada");
 
 
 	while(1){
@@ -616,9 +612,10 @@ void vTask_Farois (void *pvparameters) {
 }
 
 
-void vTask_Initialization_Display(void *pvParameters) {        //falta confirmar com o resto
+void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar com o resto
 
 
+	// -------- Variavéis display: --------
 	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
 	const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
 
@@ -632,33 +629,84 @@ void vTask_Initialization_Display(void *pvParameters) {        //falta confirmar
 	//Inicializar Display:
 	tft.initR(INITR_BLACKTAB);
 	tft.setRotation(1);
-	tft.fillScreen(ST77XX_BLACK);
 
 
+	Serial.println("vTask_Inicialização_do_Display iniciada");
+
+
+    tft.fillScreen(ST77XX_BLUE);          // fundo azul
+    tft.setTextColor(ST77XX_WHITE);       // texto branco
+    tft.setTextSize(2);                   // tamanho maior
+
+    const char *texto = "Engenharia\nAutomovel";
+
+    // Centragem manual (display 160x128 em landscape)
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    tft.getTextBounds(texto, 0, 0, &x1, &y1, &w, &h);
+
+    int textX = (160 - w) / 2;
+    int textY = (128 - h) / 2;
+
+    tft.setCursor(textX , textY - 20);
+    tft.println("Engenharia");
+    tft.setCursor(textX + 10, textY);
+    tft.println("Automovel");
+    tft.setTextSize(1);
+    tft.setCursor(textX + 15, textY + 30);
+    tft.println("Joao Santos");
+    tft.setCursor(textX + 15, textY + 40);
+    tft.println("Afonso Fernandes");
+    tft.setCursor(10, textY + 65);
+    tft.println("2025/2026");
+
+    // Mostrar durante 2s
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
+
+    // Limpar
+    tft.fillScreen(ST77XX_BLACK);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+
+
+	// desenhar elementos fixos no início
 	drawOutlineRect(leftX, leftY, leftW, leftH + 1, COLOR_OUTLINE);      //barra dutycycle
 	drawOutlineRect(centerX, centerY, leftW, leftH + 1, COLOR_OUTLINE);  //barra proximidade
-	drawChassis();
+	drawChassis(chassisX, chassisY, chassisW, chassisH);
+	drawPercentBar(leftX, leftY, leftW, leftH, 255, COLOR_LEFT_FILL);
+	drawCenteredText(leftX, leftY, leftW, leftH, "100%");
 	tft.setTextColor(ST77XX_WHITE);
 	tft.setTextSize(1);
 	tft.setCursor(15, leftY + leftH + 5);
 	tft.println("DC");
 	tft.setCursor(43, leftY + leftH + 5);
 	tft.println("Prox");
-	drawHighBeams(false);
+	drawHighBeams(highBeamX, highBeamY, highBeamR, false);
 
 
-	Serial.print("vTask_Display iniciada");
+	Serial.println("vTask_Inicializacao_do_Display prestes a levar delete");
 
-	vTaskDelay(NULL);
+
+	vTaskDelay(500 / portTICK_PERIOD_MS);
+
+	// Criar task vTask_Display
+	xTaskCreatePinnedToCore(vTask_Display, "Task Display", 4096, NULL, 1, NULL, 1);
+
+	vTaskDelete(NULL);
 }
 
 
 void vTask_Display(void *pvParameters) {
 
-	//Inicializar Display:
-	tft.initR(INITR_BLACKTAB);
-	tft.setRotation(1);
-	tft.fillScreen(ST77XX_BLACK);
+	// -------- Variavéis display: --------
+	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
+	const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
+
+	const int chassisX = 100, chassisY = 25;
+	const int chassisW = 20,  chassisH = 70;
+
+	const int highBeamX = 135, highBeamY = 105;
+	const int highBeamR = 8;
 
 	int dist = 0;       //distancia
 	int prevDist = -1;  //distancia anterior
@@ -672,20 +720,7 @@ void vTask_Display(void *pvParameters) {
 	int distUpdateCounter = 0;
 
 
-	// desenhar elementos fixos no início
-	drawOutlineRect(leftX, leftY, leftW, leftH+1, COLOR_OUTLINE);         //barra dutycycle
-	drawOutlineRect(centerX, centerY, leftW, leftH+1, COLOR_OUTLINE);   //barra proximidade
-	drawChassis();
-	tft.setTextColor(ST77XX_WHITE);
-    tft.setTextSize(1);
-	tft.setCursor(15, leftY+leftH+5);
-	tft.println("DC");
-	tft.setCursor(43, leftY+leftH+5);
-	tft.println("Prox");
-	drawHighBeams(false);
-
-
-	Serial.print("vTask_Display iniciada");
+	Serial.println("vTask_Display iniciada");
 
 
 	while(1){
@@ -724,12 +759,14 @@ void vTask_Display(void *pvParameters) {
 
 
     //     -----------  ----------- está mal  ----------- -----------
+	//if (xQueueReceive()){
 	bool high = digitalRead(LED_farois);
     if (high != prevHighBeam){
-	  drawHighBeams(high);
+	  drawHighBeams(highBeamX, highBeamY, highBeamR, high);
 
 	prevHighBeam = high;
     }
+
     //     -----------  ----------- está mal  ----------- -----------
 
 
@@ -763,12 +800,12 @@ void vTask_Display(void *pvParameters) {
 	       ctrl.direcao           != prevctrl.direcao){
 
 
-		     eraseArrows();
+		     eraseArrows(chassisX, chassisY, chassisW, chassisH);
 
-		     if (ctrl.sentido_de_tracao > 0) drawArrowFront();
-		     else if (ctrl.sentido_de_tracao < 0) drawArrowBack();
-		     if (ctrl.direcao > 0) drawArrowRight();
-		     else if (ctrl.direcao < 0) drawArrowLeft();
+		     if      (ctrl.sentido_de_tracao > 0)   drawArrowFront(chassisX, chassisY, chassisW, chassisH);
+		     else if (ctrl.sentido_de_tracao < 0)   drawArrowBack(chassisX, chassisY, chassisW, chassisH);
+		     if      (ctrl.direcao > 0)             drawArrowRight(chassisX, chassisY, chassisW, chassisH);
+		     else if (ctrl.direcao < 0)             drawArrowLeft(chassisX, chassisY, chassisW, chassisH);
 
 
 	     prevctrl = ctrl;
@@ -791,7 +828,7 @@ void vTask_Bluetooth(void *pvParameters) {
     int carga = 255;
 
 
-	Serial.print("vTask_Bluetooth iniciada");
+    Serial.println("vTask_Bluetooth iniciada");
 
 
 	while (1) {
@@ -1071,6 +1108,9 @@ void vTask_PiscasManager(void *pvParameters) {
                         }
                         if (quatro_piscas_TaskHandle == NULL) {
                             if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
+
+                            	//...
+
                             	quatro_ativo = true;
                             } else {
                                 quatro_piscas_TaskHandle = NULL;
