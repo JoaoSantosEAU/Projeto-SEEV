@@ -123,7 +123,7 @@ static void Semaforo_give( void );
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
-QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue;
+QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue, LuzesLigadasQueue;
 
 // -------- Structs --------
 typedef struct {
@@ -278,7 +278,7 @@ void setup(){
     controloQueue     =  xQueueCreate(1 , sizeof(Controlo)    );
     piscasQueue       =  xQueueCreate(10, sizeof(piscasQueue) );
     luminosidadeQueue =  xQueueCreate(1 , sizeof(luminosidade));
-
+    LuzesLigadasQueue =  xQueueCreate(1 , sizeof(bool)        );
 
     // -------- Botoes das interrupções --------
     pinMode(0, INPUT_PULLUP);  // Boot button
@@ -585,6 +585,7 @@ void vTask_LDR_ADC(void *pvParameters) {
 void vTask_Farois (void *pvparameters) {
 
 	luminosidade msg;
+	bool luzesLigadas = false;
 
 	pinMode(LED_farois, OUTPUT);
 	digitalWrite(LED_farois, LOW);
@@ -602,10 +603,19 @@ void vTask_Farois (void *pvparameters) {
 
 	  if (LDR_value < escuro)	{
 	    digitalWrite (LED_farois, HIGH);
-	    Serial.println("LED is ON - Its dark");      //debug
+
+	    if(!luzesLigadas){
+	    luzesLigadas = true;
+	    xQueueOverwrite(LuzesLigadasQueue, &luzesLigadas);
+	    }
+	    //Serial.println("LED is ON - Its dark");      //debug
 	} else {
 	    digitalWrite (LED_farois, LOW);
-	    Serial.println("LED is OFF - Its bright");   //debug
+	    if(luzesLigadas){
+	    luzesLigadas = false;
+	    xQueueOverwrite(LuzesLigadasQueue, &luzesLigadas);
+	    //Serial.println("LED is OFF - Its bright");   //debug
+	    }
 	  }
     }
     }
@@ -714,7 +724,8 @@ void vTask_Display(void *pvParameters) {
 	int prevduty = -1;  //dutycycle anterior
 	Controlo prevctrl = {999,999,999};  //struct de controlo do motor anterior
 	Controlo ctrl;                      //struct de controlo do motor
-	bool prevHighBeam = false;
+	bool msg;
+	bool prevEstado_das_luzes = false;
 	char dutyText[10];
 	char distText[10];
 	int distUpdateCounter = 0;
@@ -759,14 +770,14 @@ void vTask_Display(void *pvParameters) {
 
 
     //     -----------  ----------- está mal  ----------- -----------
-	//if (xQueueReceive()){
-	bool high = digitalRead(LED_farois);
-    if (high != prevHighBeam){
-	  drawHighBeams(highBeamX, highBeamY, highBeamR, high);
+	if (xQueueReceive(LuzesLigadasQueue, &msg , 10 / portTICK_PERIOD_MS)) {
+	bool Estado_das_luzes = msg;
+    if (Estado_das_luzes != prevEstado_das_luzes){
+	  drawHighBeams(highBeamX, highBeamY, highBeamR, Estado_das_luzes);
 
-	prevHighBeam = high;
+	  prevEstado_das_luzes = Estado_das_luzes;
     }
-
+	}
     //     -----------  ----------- está mal  ----------- -----------
 
 
