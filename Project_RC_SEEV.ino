@@ -85,6 +85,8 @@ SEEV - Sistemas Elétricos e Eletrónicos de Veículos
 #define COLOR_CHASSIS      ST77XX_BLUE
 #define COLOR_ARROW        ST77XX_GREEN
 #define COLOR_LIGHT        ST77XX_CYAN
+#define COLOR_ORANGE       ST77XX_ORANGE
+#define COLOR_YELLOW       ST77XX_YELLOW
 
 // -------- LDR + LEDS --------
 #define ADC_RESOLUTION 10
@@ -97,7 +99,7 @@ SEEV - Sistemas Elétricos e Eletrónicos de Veículos
 
 // -------- Butôes: --------
 #define Botao_esquerdo 15               // botao preto  VN pin
-#define Botao_direito 34               // botao vermelho
+#define Botao_direito 34                // botao vermelho
 
 
 // -------- Funções PWM --------
@@ -117,11 +119,14 @@ void vTask_Farois(void *pvParameters);
 void vTask_PiscasManager(void *pvParameters);
 void vTask_pisca_direito(void *pvParameters);
 void vTask_pisca_esquerdo(void *pvParameters);
+void vTask_piscas_emergencia(void *pvParameters);
 static void Semaforo_give( void );
 
 
 // -------- Queues --------
-QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue, LuzesLigadasQueue;
+QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue, LuzesLigadasQueue, Quatro_Piscas_DisplayQueue;
+
+//portMUX_TYPE mux_travagem = portMUX_INITIALIZER_UNLOCKED;
 
 // -------- Structs --------
 typedef struct {
@@ -140,25 +145,36 @@ typedef struct {
 // -------- Semáforos: --------                   //
 SemaphoreHandle_t semaforo_piscas;
 
+
 // -------- Task handles dos piscas: --------
-TaskHandle_t pisca_esquerdo_TaskHandle  = NULL;
-TaskHandle_t pisca_direito_TaskHandle   = NULL;
-TaskHandle_t quatro_piscas_TaskHandle   = NULL;
+TaskHandle_t pisca_esquerdo_TaskHandle      = NULL;
+TaskHandle_t pisca_direito_TaskHandle       = NULL;
+TaskHandle_t quatro_piscas_TaskHandle       = NULL;
+TaskHandle_t travagem_emergencia_TaskHandle = NULL;
 TaskHandle_t piscaManager_Handle        = NULL;
 
 
 typedef enum {
   PISCA_ESQUERDO,
   PISCA_DIREITO,
-  PISCA_QUATRO
+  PISCA_QUATRO,
+  TRAVAGEM_EMERGENCIA
 } PiscaEvento_t;
 
 
 // -------- Estados: --------
-bool esquerdo_ativo = false;
-bool direito_ativo = false;
-bool quatro_ativo = false;                        //
-                                                  //
+bool esquerdo_ativo 		   = false;
+bool direito_ativo			   = false;
+bool quatro_ativo              = false;
+bool travagem_emergencia_ativo = false;
+
+
+typedef struct {
+    bool Estado;
+    uint16_t cor;
+} QuatroPiscas_display;
+												  //
+ 	 	 	 	 	 	 	 	 	 	 	 	  //
 // -------------------------------------------------
 
 
@@ -218,8 +234,12 @@ void drawChassis(int chassisX, int chassisY, int chassisW, int chassisH, Adafrui
 
 
 void eraseArrows(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
-    tft.fillRect(chassisX-25,chassisY-25,chassisW+50,chassisH+50,COLOR_Background);
-    drawChassis(chassisX, chassisY, chassisW, chassisH, tft);
+	int mx=chassisX+chassisW/2;
+	int my=chassisY+chassisH/2;
+	tft.fillTriangle(mx, chassisY-18, mx-6, chassisY-4, mx+6, chassisY-4, COLOR_Background);
+	tft.fillTriangle(mx, chassisY+chassisH+18, mx-6, chassisY+chassisH+4, mx+6, chassisY+chassisH+4, COLOR_Background);
+	tft.fillTriangle(chassisX-18,my, chassisX-4,my-6, chassisX-4,my+6, COLOR_Background);
+	tft.fillTriangle(chassisX+chassisW+18,my, chassisX+chassisW+4,my-6, chassisX+chassisW+4,my+6, COLOR_Background);
     }
 
 
@@ -245,7 +265,7 @@ void drawArrowRight(int chassisX, int chassisY, int chassisW, int chassisH, Adaf
     }
 
 
-void drawHighBeams(int highBeamX, int highBeamY, int highBeamR, bool on, Adafruit_ST7735 tft){
+void drawFarois(int highBeamX, int highBeamY, int highBeamR, bool on, Adafruit_ST7735 tft){
     if(on){
         tft.fillCircle(highBeamX,highBeamY,highBeamR,COLOR_LIGHT);
         tft.drawLine(highBeamX+5,highBeamY-6 , highBeamX+14 , highBeamY-12 ,COLOR_LIGHT);
@@ -274,21 +294,25 @@ void setup(){
 
 
 	// -------- Criar Queues --------
-    distanciaQueue    =  xQueueCreate(1 , sizeof(int)         );
-    controloQueue     =  xQueueCreate(1 , sizeof(Controlo)    );
-    piscasQueue       =  xQueueCreate(10, sizeof(piscasQueue) );
-    luminosidadeQueue =  xQueueCreate(1 , sizeof(luminosidade));
-    LuzesLigadasQueue =  xQueueCreate(1 , sizeof(bool)        );
+    distanciaQueue            =  xQueueCreate(1 , sizeof(int)        		  );
+    controloQueue             =  xQueueCreate(1 , sizeof(Controlo)   		  );
+    piscasQueue               =  xQueueCreate(10, sizeof(piscasQueue)		  );
+    luminosidadeQueue         =  xQueueCreate(1 , sizeof(luminosidade)		  );
+    LuzesLigadasQueue         =  xQueueCreate(1 , sizeof(bool)        	      );
+    Quatro_Piscas_DisplayQueue=  xQueueCreate(1 , sizeof(QuatroPiscas_display));
+
 
     // -------- Botoes das interrupções --------
-    pinMode(0, INPUT_PULLUP);  // Boot button
-    pinMode(Botao_esquerdo, INPUT);     // external pull-up
+    pinMode(0, INPUT_PULLUP);           // Boot button
+    pinMode(Botao_esquerdo, INPUT);     // External pull-up
     pinMode(Botao_direito,  INPUT);
+
 
     // -------- Interrupções --------
     attachInterrupt(digitalPinToInterrupt(0),               &ISR_quatro_piscas ,  FALLING);
     attachInterrupt(digitalPinToInterrupt(Botao_esquerdo),  &ISR_Botao_esquerdo,  FALLING);
     attachInterrupt(digitalPinToInterrupt(Botao_direito) ,  &ISR_Botao_direito ,  FALLING);
+
 
     // -------- Semáforos --------
     semaforo_piscas = xSemaphoreCreateCounting(10, 0);
@@ -365,7 +389,9 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	int sentido_de_tracao = 0;
 	int carga = 0;
 	Controlo msg;
+	QuatroPiscas_display msg2;
 	bool quatro_auto_ativo = false;
+	bool QuatroPiscas_display = false;
 
 	pinMode(IN1, OUTPUT);
 	pinMode(IN2, OUTPUT);
@@ -388,6 +414,10 @@ void vTask_PWM_Tracao(void *pvParameters) {
 
 	if (distancia < 150) {           //100 = 10cm
 
+	  // ENTRAR EM CRITICAL SECTION (desativa interrupções)
+	  //portENTER_CRITICAL(&mux_travagem);                   //comentado lá em cima a parte do mutex para a critical section
+	  //taskENTER_CRITICAL();
+
 	  // Subir prioridade
 	  if (uxTaskPriorityGet(NULL) != 6) {
 	    vTaskPrioritySet(NULL, 6);
@@ -397,16 +427,20 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	  digitalWrite(IN1, HIGH);
 	  digitalWrite(IN2, HIGH);
 
-	  //Acender 4 piscas
+	  // Acender 4 piscas de emergencia
 	  if (quatro_auto_ativo == false){
-	    PiscaEvento_t ev = PISCA_QUATRO;
+	    PiscaEvento_t ev = TRAVAGEM_EMERGENCIA;
 	    xQueueSend(piscasQueue, &ev, 0);
 
-	    //...
 
 	    quatro_auto_ativo = true;
-		}                                                                      //
-	}                                                                          // 	                                                                       //
+	  }
+	  // SAIR DA CRITICAL SECTION (reativa interrupções)
+	  //portEXIT_CRITICAL(&mux_travagem);
+	}
+							                                                   //
+													                   		   //
+                                                                               //
 	// --------------------------------------------------------------------------
 
 
@@ -417,12 +451,11 @@ void vTask_PWM_Tracao(void *pvParameters) {
 	  vTaskPrioritySet(NULL, 4);
 	}
 
-    //Desligadar 4 piscas
+    //Desligadar 4 piscas de emergencia
 	if (quatro_auto_ativo == true){
-	  PiscaEvento_t ev = PISCA_QUATRO;
+	  PiscaEvento_t ev = TRAVAGEM_EMERGENCIA;
 	  xQueueSend(piscasQueue, &ev, 0);
 
-	  //...
 
 	  quatro_auto_ativo = false;
 	}
@@ -627,7 +660,7 @@ void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar 
 	Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 	// -------- Variavéis display: --------
-	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
+	const int leftX = 5,    leftY = 20,   leftW = 30,   leftH = 82;
 	const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
 
 	const int chassisX = 100, chassisY = 25;
@@ -692,7 +725,7 @@ void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar 
 	tft.println("DC");
 	tft.setCursor(43, leftY + leftH + 5);
 	tft.println("Prox");
-	drawHighBeams(highBeamX, highBeamY, highBeamR, false, tft);
+	drawFarois(highBeamX, highBeamY, highBeamR, false, tft);
 
 
 	Serial.println("vTask_Inicializacao_do_Display prestes a levar delete");
@@ -710,9 +743,11 @@ void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar 
 void vTask_Display(void *pvParameters) {
 
 	Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+	tft.initR(INITR_BLACKTAB);     //se não por estas duas linhas aqui não aparece o sinal dos farois ligados
+	tft.setRotation(1);
 
 	// -------- Variavéis display: --------
-	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
+	const int leftX = 5,    leftY = 20,   leftW = 30,   leftH = 82;
 	const int centerX = 40, centerY = 20, centerW = 30, centerH = 82;
 
 	const int chassisX = 100, chassisY = 25;
@@ -723,15 +758,22 @@ void vTask_Display(void *pvParameters) {
 
 	int dist = 0;       //distancia
 	int prevDist = -1;  //distancia anterior
+
 	int duty = 0;       //dutycycle
 	int prevduty = -1;  //dutycycle anterior
 	Controlo prevctrl = {999,999,999};  //struct de controlo do motor anterior
 	Controlo ctrl;                      //struct de controlo do motor
+
 	bool msg;
 	bool prevEstado_das_luzes = false;
+
+	QuatroPiscas_display msg_quatro_piscas;
+	bool Estado_quatro_piscas = false;
+	uint16_t Cor;
+
 	char dutyText[10];
 	char distText[10];
-	int distUpdateCounter = 0;
+	int  distUpdateCounter = 0;
 
 
 	Serial.println("vTask_Display iniciada");
@@ -743,86 +785,109 @@ void vTask_Display(void *pvParameters) {
         // ----------------------------------------------------------------
 		// ------------------ BAR central : Distância ---------------------
 		// ----------------------------------------------------------------
-
-
+                                                                         //
+                                                                         //
 	if (xQueueReceive(distanciaQueue, &dist , 10 / portTICK_PERIOD_MS)) {
 
 	  if (dist != prevDist){
 
-		//Converte distância p/ percentagem (0–2 m → 0–100%)
-		int dist_pct = map(dist, 0, 600, 100, 0);
-		dist_pct = constrain(dist_pct, 0, 100);        // = if(dist_pct < 0)   dist_pct = 0;
-	                                                   //   if(dist_pct > 100) dist_pct = 100;
+	  //Converte distância p/ percentagem (0–2 m → 0–100%)
+	  int dist_pct = map(dist, 0, 600, 100, 0);
+	  dist_pct = constrain(dist_pct, 0, 100);        // = if(dist_pct < 0)   dist_pct = 0;
+	                                                 //   if(dist_pct > 100) dist_pct = 100;
 
-          drawPercentBar(centerX, centerY, centerW, centerH, dist_pct, COLOR_CENTER_FILL, tft);
+      drawPercentBar(centerX, centerY, centerW, centerH, dist_pct, COLOR_CENTER_FILL, tft);
 
-          //Inserir valores dentro da barra
-          sprintf(distText, "%dcm", dist / 10);  // convert mm → cm
-          drawCenteredText(centerX, centerY, centerW, centerH, distText, tft);
+      //Inserir valores dentro da barra
+      sprintf(distText, "%dcm", dist / 10);  // convert mm → cm
+      drawCenteredText(centerX, centerY, centerW, centerH, distText, tft);
 
 
 	  prevDist = dist;
 	  }
-
-}
-
-
+      }
+                                                                        //
+                                                                        //
 	   // ----------------------------------------------------------------
-	   // ------------------- HIGH BEAMS ("máximos") ---------------------
+	   // ------------------------- Farois -------------------------------
 	   // ----------------------------------------------------------------
-
-
+                                                                        //
+                                                                        //
 	if (xQueueReceive(LuzesLigadasQueue, &msg , 10 / portTICK_PERIOD_MS)) {
-	bool Estado_das_luzes = msg;
-    if (Estado_das_luzes != prevEstado_das_luzes){
-	  drawHighBeams(highBeamX, highBeamY, highBeamR, Estado_das_luzes, tft);
+
+	  bool Estado_das_luzes = msg;
+
+	  if (Estado_das_luzes != prevEstado_das_luzes){
+	    drawFarois(highBeamX, highBeamY, highBeamR, Estado_das_luzes, tft);
 
 	  prevEstado_das_luzes = Estado_das_luzes;
-    }
-	}
-
-
+      }
+	  }
+                                                                        //
+                                                                        //
 	   // ----------------------------------------------------------------
 	   // ------------------ BAR Esquerda : Duty-cycle tração ------------
 	   // ----------------------------------------------------------------
-
-
+                         	 	 	 	 	 	 	 	 	 	 	 	//
+																		//
 	if (xQueuePeek(controloQueue, &ctrl, 10 / portTICK_PERIOD_MS)) {
 		  duty = map(ctrl.carga, 175, 255, 0, 100);              // o mesmo que - carga_atual*100% a dividir pela resolução
 		  duty = constrain(duty, 0, 100);
 
 	  if (duty != prevduty){
-		  drawPercentBar(leftX, leftY, leftW, leftH, duty, COLOR_LEFT_FILL, tft);
+		drawPercentBar(leftX, leftY, leftW, leftH, duty, COLOR_LEFT_FILL, tft);
 
-		  //Inserir valores dentro da barra
-		  sprintf(dutyText, "%d%%", duty);
-		  drawCenteredText(leftX, leftY, leftW, leftH, dutyText, tft);
-
-
-	    prevduty = duty;
-	    }
+		//Inserir valores dentro da barra
+		sprintf(dutyText, "%d%%", duty);
+		drawCenteredText(leftX, leftY, leftW, leftH, dutyText, tft);
 
 
-	    // ----------------------------------------------------------------
-	    // ------------------- Setas de direções --------------------------
-	    // ----------------------------------------------------------------
+	  prevduty = duty;
+	  }
+	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	 //
+	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	     //
+	   // -----------------------------------------------------------------
+	   // ------------------- Setas de direções ---------------------------
+	   // -----------------------------------------------------------------
+	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	 //
+	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	  	 //
+	  if (ctrl.sentido_de_tracao != prevctrl.sentido_de_tracao ||
+	      ctrl.direcao           != prevctrl.direcao){
 
 
-	   if (ctrl.sentido_de_tracao != prevctrl.sentido_de_tracao ||
-	       ctrl.direcao           != prevctrl.direcao){
+		eraseArrows(chassisX, chassisY, chassisW, chassisH, tft);
+
+		if      (ctrl.sentido_de_tracao > 0)   drawArrowFront(chassisX, chassisY, chassisW, chassisH, tft);
+		else if (ctrl.sentido_de_tracao < 0)   drawArrowBack(chassisX, chassisY, chassisW, chassisH, tft);
+		if      (ctrl.direcao > 0)             drawArrowRight(chassisX, chassisY, chassisW, chassisH, tft);
+		else if (ctrl.direcao < 0)             drawArrowLeft(chassisX, chassisY, chassisW, chassisH, tft);
 
 
-		     eraseArrows(chassisX, chassisY, chassisW, chassisH, tft);
+	  prevctrl = ctrl;
+	  }
+      }
 
-		     if      (ctrl.sentido_de_tracao > 0)   drawArrowFront(chassisX, chassisY, chassisW, chassisH, tft);
-		     else if (ctrl.sentido_de_tracao < 0)   drawArrowBack(chassisX, chassisY, chassisW, chassisH, tft);
-		     if      (ctrl.direcao > 0)             drawArrowRight(chassisX, chassisY, chassisW, chassisH, tft);
-		     else if (ctrl.direcao < 0)             drawArrowLeft(chassisX, chassisY, chassisW, chassisH, tft);
+																		//
+	   // ----------------------------------------------------------------
+	   // ------------------------ Quatro piscas -------------------------
+	   // ----------------------------------------------------------------
+	                                                                    //
+	                                                                    //
+	  if (xQueueReceive(Quatro_Piscas_DisplayQueue, &msg_quatro_piscas , 10 / portTICK_PERIOD_MS)) {
+		Estado_quatro_piscas = msg_quatro_piscas.Estado;
+		Cor                  = msg_quatro_piscas.cor;
 
+		if (Estado_quatro_piscas == true){
+		  tft.fillTriangle(138, 20, 154, 20, 146, 5, Cor);
+		}
+		if (Estado_quatro_piscas == false){
+		  tft.fillTriangle(138, 20, 154, 20, 146, 5, Cor);
+		}
+		}
+																	   //
+																       //
+	   //----------------------------------------------------------------
 
-	     prevctrl = ctrl;
-	     }
-    }
 	  vTaskDelay(30 / portTICK_PERIOD_MS);
   }
 }
@@ -1026,6 +1091,24 @@ void vTask_quatro_piscas(void *pvParameters) {
 }
 
 
+void vTask_piscas_emergencia(void *pvParameters) {
+
+    pinMode(LED_piscasdireita, OUTPUT);
+    pinMode(LED_piscasesquerda, OUTPUT);
+    digitalWrite(LED_piscasdireita, LOW);
+    digitalWrite(LED_piscasesquerda, LOW);
+
+    for (;;) {
+        digitalWrite(LED_piscasdireita, HIGH);
+        digitalWrite(LED_piscasesquerda, HIGH);
+        vTaskDelay(150 / portTICK_PERIOD_MS);
+        digitalWrite(LED_piscasdireita, LOW);
+        digitalWrite(LED_piscasesquerda, LOW);
+        vTaskDelay(150 / portTICK_PERIOD_MS);
+    }
+}
+
+
 
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1038,12 +1121,16 @@ void vTask_quatro_piscas(void *pvParameters) {
 void vTask_PiscasManager(void *pvParameters) {
 
 	PiscaEvento_t ev;
+	QuatroPiscas_display msg;
+	bool QuatroPiscas_display = false;
+
     for (;;) {
         if (xQueueReceive(piscasQueue, &ev, portMAX_DELAY) == pdTRUE) {
 
             switch (ev) {
                 case PISCA_ESQUERDO:
 
+                	if(!travagem_emergencia_ativo){
 				    Semaforo_give();
 
                     if (!esquerdo_ativo) {
@@ -1071,10 +1158,12 @@ void vTask_PiscasManager(void *pvParameters) {
                         esquerdo_ativo = false;
                         digitalWrite(LED_piscasesquerda, LOW);
                     }
+                	}
                     break;
 
                 case PISCA_DIREITO:
 
+                	if(!travagem_emergencia_ativo){
                 	Semaforo_give();
 
                     if (!direito_ativo) {
@@ -1101,9 +1190,12 @@ void vTask_PiscasManager(void *pvParameters) {
                         direito_ativo = false;
                         digitalWrite(LED_piscasdireita, LOW);
                     }
+                	}
                     break;
 
                 case PISCA_QUATRO:
+
+                	if(!travagem_emergencia_ativo){
                     if (!quatro_ativo) {
 
                         if (pisca_esquerdo_TaskHandle != NULL) {
@@ -1119,9 +1211,16 @@ void vTask_PiscasManager(void *pvParameters) {
                             digitalWrite(LED_piscasdireita, LOW);
                         }
                         if (quatro_piscas_TaskHandle == NULL) {
-                            if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
 
-                            	//...
+
+                  	        if (xTaskCreatePinnedToCore(vTask_quatro_piscas, "Quatro_Piscas", 2048, NULL, 2, &quatro_piscas_TaskHandle, 1) == pdPASS) {
+
+
+                              	  QuatroPiscas_display = true;
+                              	  msg.Estado = QuatroPiscas_display;
+                              	  msg.cor    = COLOR_YELLOW;
+                              	  xQueueSend(Quatro_Piscas_DisplayQueue, &msg, 0);            //talvez overwrite
+
 
                             	quatro_ativo = true;
                             } else {
@@ -1132,14 +1231,82 @@ void vTask_PiscasManager(void *pvParameters) {
                         }
                     } else {
                         if (quatro_piscas_TaskHandle != NULL) {
-                            vTaskDelete(quatro_piscas_TaskHandle);
-                            quatro_piscas_TaskHandle = NULL;
+                          vTaskDelete(quatro_piscas_TaskHandle);
+                          quatro_piscas_TaskHandle = NULL;
+
+
+                          QuatroPiscas_display = false;
+                          msg.Estado = QuatroPiscas_display;
+                          msg.cor    = COLOR_Background;
+                          xQueueSend(Quatro_Piscas_DisplayQueue, &msg, 0);            //talvez overwrite
+
+
                         }
                         quatro_ativo = false;
                         digitalWrite(LED_piscasdireita, LOW);
                         digitalWrite(LED_piscasesquerda, LOW);
                     }
+                	}
                     break;
+
+                case TRAVAGEM_EMERGENCIA:
+                    if (!travagem_emergencia_ativo) {
+
+                      if (pisca_esquerdo_TaskHandle != NULL) {
+                          vTaskDelete(pisca_esquerdo_TaskHandle);
+                          pisca_esquerdo_TaskHandle = NULL;
+                          esquerdo_ativo = false;
+                          digitalWrite(LED_piscasesquerda, LOW);
+                      }
+                      if (pisca_direito_TaskHandle != NULL) {
+                          vTaskDelete(pisca_direito_TaskHandle);
+                          pisca_direito_TaskHandle = NULL;
+                          direito_ativo = false;
+                          digitalWrite(LED_piscasdireita, LOW);
+                      }
+                      if (quatro_piscas_TaskHandle != NULL) {
+                           vTaskDelete(quatro_piscas_TaskHandle);
+                           quatro_piscas_TaskHandle = NULL;
+                           quatro_ativo = false;
+                           digitalWrite(LED_piscasdireita, LOW);
+                           digitalWrite(LED_piscasesquerda, LOW);
+
+                      }
+                      if (quatro_piscas_TaskHandle == NULL) {
+
+                        if (xTaskCreatePinnedToCore(vTask_piscas_emergencia, "Travagem_emergencia", 2048, NULL, 2, &travagem_emergencia_TaskHandle, 1) == pdPASS) {
+
+                          QuatroPiscas_display = true;
+                          msg.Estado = QuatroPiscas_display;
+                          msg.cor    = COLOR_CENTER_FILL;
+                          xQueueSend(Quatro_Piscas_DisplayQueue, &msg, 0);            //talvez overwrite
+
+
+                           travagem_emergencia_ativo = true;
+                        } else {
+                              travagem_emergencia_TaskHandle = NULL;
+                              }
+                        } else {
+                              travagem_emergencia_ativo = true;
+                        }
+                        } else {
+                              if (travagem_emergencia_TaskHandle != NULL) {
+                                vTaskDelete(travagem_emergencia_TaskHandle);
+                                travagem_emergencia_TaskHandle = NULL;
+
+
+                                QuatroPiscas_display = false;
+                                msg.Estado = QuatroPiscas_display;
+                                msg.cor    = COLOR_Background;
+                                xQueueSend(Quatro_Piscas_DisplayQueue, &msg, 0);            //talvez overwrite
+
+
+                        }
+                                travagem_emergencia_ativo = false;
+                                digitalWrite(LED_piscasdireita, LOW);
+                                digitalWrite(LED_piscasesquerda, LOW);
+                        }
+                        break;
             }
         }
     }
@@ -1179,6 +1346,5 @@ static portBASE_TYPE xHigherPriorityTaskWoken;
 void loop(){
 	vTaskDelete(NULL);
 }
-
 
 
