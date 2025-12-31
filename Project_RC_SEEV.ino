@@ -772,7 +772,6 @@ void vTask_Display(void *pvParameters) {
 	   // ----------------------------------------------------------------
 
 
-    //     -----------  ----------- está mal  ----------- -----------
 	if (xQueueReceive(LuzesLigadasQueue, &msg , 10 / portTICK_PERIOD_MS)) {
 	bool Estado_das_luzes = msg;
     if (Estado_das_luzes != prevEstado_das_luzes){
@@ -781,7 +780,6 @@ void vTask_Display(void *pvParameters) {
 	  prevEstado_das_luzes = Estado_das_luzes;
     }
 	}
-    //     -----------  ----------- está mal  ----------- -----------
 
 
 	   // ----------------------------------------------------------------
@@ -1181,5 +1179,6 @@ static portBASE_TYPE xHigherPriorityTaskWoken;
 void loop(){
 	vTaskDelete(NULL);
 }
+
 
 
