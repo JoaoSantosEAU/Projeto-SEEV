@@ -119,8 +119,6 @@ void vTask_pisca_direito(void *pvParameters);
 void vTask_pisca_esquerdo(void *pvParameters);
 static void Semaforo_give( void );
 
-// -------- Periféricos --------
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 // -------- Queues --------
 QueueHandle_t distanciaQueue, controloQueue, piscasQueue, luminosidadeQueue, LuzesLigadasQueue;
@@ -137,9 +135,9 @@ typedef struct {
 	int LDR_value;
 }luminosidade ;
 
-// ---------------- Piscas: ----------------
-
-// -------- Semáforos: --------
+// -------------------- Piscas: --------------------
+                                                  //
+// -------- Semáforos: --------                   //
 SemaphoreHandle_t semaforo_piscas;
 
 // -------- Task handles dos piscas: --------
@@ -159,7 +157,9 @@ typedef enum {
 // -------- Estados: --------
 bool esquerdo_ativo = false;
 bool direito_ativo = false;
-bool quatro_ativo = false;
+bool quatro_ativo = false;                        //
+                                                  //
+// -------------------------------------------------
 
 
 
@@ -172,11 +172,11 @@ bool quatro_ativo = false;
 
 
 // funções display                                     tft.drawRect(x, y, width, height, color);
-void drawOutlineRect(int x,int y,int w,int h,uint16_t color){
+void drawOutlineRect(int x,int y,int w,int h,uint16_t color, Adafruit_ST7735 tft){
     tft.drawRect(x,y,w,h,color);
     }
 
-void drawPercentBar(int x,int y,int w,int h,int pct,uint16_t color){
+void drawPercentBar(int x,int y,int w,int h,int pct,uint16_t color, Adafruit_ST7735 tft){
     if(pct<0) pct=0;
     if(pct>100) pct=100;
 
@@ -189,7 +189,7 @@ void drawPercentBar(int x,int y,int w,int h,int pct,uint16_t color){
 
 
 //Inserir valores dentro das barras
-void drawCenteredText(int x, int y, int w, int h, const char* text) {
+void drawCenteredText(int x, int y, int w, int h, const char* text, Adafruit_ST7735 tft) {
     // Clear text area
     tft.fillRect(x+2, y+2, w-4, 10, COLOR_Background);
 
@@ -206,7 +206,7 @@ void drawCenteredText(int x, int y, int w, int h, const char* text) {
 }
 
 
-void drawChassis(int chassisX, int chassisY, int chassisW, int chassisH){
+void drawChassis(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
     tft.drawRect(chassisX, chassisY, chassisW, chassisH, COLOR_CHASSIS);
 
     // rodas
@@ -217,35 +217,35 @@ void drawChassis(int chassisX, int chassisY, int chassisW, int chassisH){
     }
 
 
-void eraseArrows(int chassisX, int chassisY, int chassisW, int chassisH){
+void eraseArrows(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
     tft.fillRect(chassisX-25,chassisY-25,chassisW+50,chassisH+50,COLOR_Background);
-    drawChassis(chassisX, chassisY, chassisW, chassisH);
+    drawChassis(chassisX, chassisY, chassisW, chassisH, tft);
     }
 
 
-void drawArrowFront(int chassisX, int chassisY, int chassisW, int chassisH){                        //tft.fillTriangle(x1, y1, x2, y2, x3, y3, color);
+void drawArrowFront(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){                        //tft.fillTriangle(x1, y1, x2, y2, x3, y3, color);
     int mx=chassisX+chassisW/2;  //meio do retangulo do chassis na horizontal
     tft.fillTriangle(mx, chassisY-18, mx-6, chassisY-4, mx+6, chassisY-4, COLOR_ARROW);
     }
 
 
-void drawArrowBack(int chassisX, int chassisY, int chassisW, int chassisH){
+void drawArrowBack(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
     int mx=chassisX+chassisW/2;
     tft.fillTriangle(mx, chassisY+chassisH+18, mx-6, chassisY+chassisH+4, mx+6, chassisY+chassisH+4, COLOR_ARROW);
     }
 
 
-void drawArrowLeft(int chassisX, int chassisY, int chassisW, int chassisH){
+void drawArrowLeft(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
     int my=chassisY+chassisH/2;   //meio do retangulo do chassis na vertical
     tft.fillTriangle(chassisX-18,my, chassisX-4,my-6, chassisX-4,my+6, COLOR_ARROW);
     }
-void drawArrowRight(int chassisX, int chassisY, int chassisW, int chassisH){
+void drawArrowRight(int chassisX, int chassisY, int chassisW, int chassisH, Adafruit_ST7735 tft){
     int my=chassisY+chassisH/2;
     tft.fillTriangle(chassisX+chassisW+18,my, chassisX+chassisW+4,my-6, chassisX+chassisW+4,my+6, COLOR_ARROW);
     }
 
 
-void drawHighBeams(int highBeamX, int highBeamY, int highBeamR, bool on){
+void drawHighBeams(int highBeamX, int highBeamY, int highBeamR, bool on, Adafruit_ST7735 tft){
     if(on){
         tft.fillCircle(highBeamX,highBeamY,highBeamR,COLOR_LIGHT);
         tft.drawLine(highBeamX+5,highBeamY-6 , highBeamX+14 , highBeamY-12 ,COLOR_LIGHT);
@@ -624,6 +624,7 @@ void vTask_Farois (void *pvparameters) {
 
 void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar com o resto
 
+	Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 	// -------- Variavéis display: --------
 	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
@@ -680,18 +681,18 @@ void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar 
 
 
 	// desenhar elementos fixos no início
-	drawOutlineRect(leftX, leftY, leftW, leftH + 1, COLOR_OUTLINE);      //barra dutycycle
-	drawOutlineRect(centerX, centerY, leftW, leftH + 1, COLOR_OUTLINE);  //barra proximidade
-	drawChassis(chassisX, chassisY, chassisW, chassisH);
-	drawPercentBar(leftX, leftY, leftW, leftH, 255, COLOR_LEFT_FILL);
-	drawCenteredText(leftX, leftY, leftW, leftH, "100%");
+	drawOutlineRect(leftX, leftY, leftW, leftH + 1, COLOR_OUTLINE, tft);      //barra dutycycle
+	drawOutlineRect(centerX, centerY, leftW, leftH + 1, COLOR_OUTLINE, tft);  //barra proximidade
+	drawChassis(chassisX, chassisY, chassisW, chassisH, tft);
+	drawPercentBar(leftX, leftY, leftW, leftH, 255, COLOR_LEFT_FILL, tft);
+	drawCenteredText(leftX, leftY, leftW, leftH, "100%", tft);
 	tft.setTextColor(ST77XX_WHITE);
 	tft.setTextSize(1);
 	tft.setCursor(15, leftY + leftH + 5);
 	tft.println("DC");
 	tft.setCursor(43, leftY + leftH + 5);
 	tft.println("Prox");
-	drawHighBeams(highBeamX, highBeamY, highBeamR, false);
+	drawHighBeams(highBeamX, highBeamY, highBeamR, false, tft);
 
 
 	Serial.println("vTask_Inicializacao_do_Display prestes a levar delete");
@@ -707,6 +708,8 @@ void vTask_Inicializacao_Display(void *pvParameters) {        //falta confirmar 
 
 
 void vTask_Display(void *pvParameters) {
+
+	Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 	// -------- Variavéis display: --------
 	const int leftX = 5, leftY = 20, leftW = 30, leftH = 82;
@@ -751,11 +754,11 @@ void vTask_Display(void *pvParameters) {
 		dist_pct = constrain(dist_pct, 0, 100);        // = if(dist_pct < 0)   dist_pct = 0;
 	                                                   //   if(dist_pct > 100) dist_pct = 100;
 
-          drawPercentBar(centerX, centerY, centerW, centerH, dist_pct, COLOR_CENTER_FILL);
+          drawPercentBar(centerX, centerY, centerW, centerH, dist_pct, COLOR_CENTER_FILL, tft);
 
           //Inserir valores dentro da barra
           sprintf(distText, "%dcm", dist / 10);  // convert mm → cm
-          drawCenteredText(centerX, centerY, centerW, centerH, distText);
+          drawCenteredText(centerX, centerY, centerW, centerH, distText, tft);
 
 
 	  prevDist = dist;
@@ -773,7 +776,7 @@ void vTask_Display(void *pvParameters) {
 	if (xQueueReceive(LuzesLigadasQueue, &msg , 10 / portTICK_PERIOD_MS)) {
 	bool Estado_das_luzes = msg;
     if (Estado_das_luzes != prevEstado_das_luzes){
-	  drawHighBeams(highBeamX, highBeamY, highBeamR, Estado_das_luzes);
+	  drawHighBeams(highBeamX, highBeamY, highBeamR, Estado_das_luzes, tft);
 
 	  prevEstado_das_luzes = Estado_das_luzes;
     }
@@ -791,11 +794,11 @@ void vTask_Display(void *pvParameters) {
 		  duty = constrain(duty, 0, 100);
 
 	  if (duty != prevduty){
-		  drawPercentBar(leftX, leftY, leftW, leftH, duty, COLOR_LEFT_FILL);
+		  drawPercentBar(leftX, leftY, leftW, leftH, duty, COLOR_LEFT_FILL, tft);
 
 		  //Inserir valores dentro da barra
 		  sprintf(dutyText, "%d%%", duty);
-		  drawCenteredText(leftX, leftY, leftW, leftH, dutyText);
+		  drawCenteredText(leftX, leftY, leftW, leftH, dutyText, tft);
 
 
 	    prevduty = duty;
@@ -811,12 +814,12 @@ void vTask_Display(void *pvParameters) {
 	       ctrl.direcao           != prevctrl.direcao){
 
 
-		     eraseArrows(chassisX, chassisY, chassisW, chassisH);
+		     eraseArrows(chassisX, chassisY, chassisW, chassisH, tft);
 
-		     if      (ctrl.sentido_de_tracao > 0)   drawArrowFront(chassisX, chassisY, chassisW, chassisH);
-		     else if (ctrl.sentido_de_tracao < 0)   drawArrowBack(chassisX, chassisY, chassisW, chassisH);
-		     if      (ctrl.direcao > 0)             drawArrowRight(chassisX, chassisY, chassisW, chassisH);
-		     else if (ctrl.direcao < 0)             drawArrowLeft(chassisX, chassisY, chassisW, chassisH);
+		     if      (ctrl.sentido_de_tracao > 0)   drawArrowFront(chassisX, chassisY, chassisW, chassisH, tft);
+		     else if (ctrl.sentido_de_tracao < 0)   drawArrowBack(chassisX, chassisY, chassisW, chassisH, tft);
+		     if      (ctrl.direcao > 0)             drawArrowRight(chassisX, chassisY, chassisW, chassisH, tft);
+		     else if (ctrl.direcao < 0)             drawArrowLeft(chassisX, chassisY, chassisW, chassisH, tft);
 
 
 	     prevctrl = ctrl;
